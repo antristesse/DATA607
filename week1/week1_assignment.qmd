@@ -1,0 +1,17 @@
+---
+title: "Week 1 assignment"
+format: html
+editor: visual
+---
+
+# Approach
+
+For this assignment, I selected a retail sales dataset containing 1,000 transactions. The dataset includes information about individual transactions, including product category, quantity, price per unit, and total sales amount.
+
+I chose this dataset because I work in retail analytics and wanted to work with familiar data. I plan to select the variables most relevant to sales and use them to create a smaller data frame. I would also like to summarize sales by product category to compare the performance of different categories.
+
+The dataset was obtained from a [public GitHub repository](https://github.com/Oragant/Retail-Sales-Dashboard/blob/main/retail_sales_dataset.csv) and contains 1,000 retail transactions across three product categories: Beauty, Clothing, and Electronics.
+
+
+
+
