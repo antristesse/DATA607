@@ -12,6 +12,26 @@ I chose this dataset because I work in retail analytics and wanted to work with 
 
 The dataset was obtained from a [public GitHub repository](https://github.com/Oragant/Retail-Sales-Dashboard/blob/main/retail_sales_dataset.csv) and contains 1,000 retail transactions across three product categories: Beauty, Clothing, and Electronics.
 
+# Data loading
+```{r}
+library(dplyr)
+retail <- read.csv("https://raw.githubusercontent.com/Oragant/Retail-Sales-Dashboard/main/retail_sales_dataset.csv")
+```
 
+# Data transformation
 
+I selected the variables most relevant to sales and renamed the columns to make them easier to interpret. I then grouped the data by product category and calculated total sales for each category.
 
+```{r}
+retail_subset <- retail[c("Date", "Product.Category", "Quantity",
+                          "Price.per.Unit", "Total.Amount")]
+names(retail_subset) <- c("date", "category", "quantity", "unit_price", "sales")
+retail_subset %>%
+  group_by(category) %>%
+  summarise(total_sales = sum(sales)) %>%
+  arrange(desc(total_sales))
+
+```
+
+# Conclusion
+Electronics generated the highest total sales at $156,905. This analysis could be extended by comparing sales over time or examining quantity sold and average price by category.
