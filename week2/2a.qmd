@@ -1,0 +1,11 @@
+---
+title: "Assignment 2a"
+format: html
+editor: visual
+---
+
+# Approach
+
+I selected six 2025 movies nominated for Best picture at the recent Oscars and collected ratings from five people using a 1–5 scale. Not every participant had seen every movie, so some ratings are missing, i will treat them as unavailable responses.
+
+I will store data in SQLite database in three tables: users, movies, and ratings. Then I will use a JOIN to combine the tables into a nicer format with names, movie titles, and rating. I plan to load SQL data into R as a dataframe and then summarize the ratings and calculate statistical summary for each movie.
