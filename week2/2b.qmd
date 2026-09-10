@@ -1,0 +1,17 @@
+---
+title: "Assignment 2b"
+format: html
+editor: visual
+---
+
+# Approach
+
+For this assignment, I will evaluate a binary classification model that predicts penguin sex. I plan to follow 4 steps:
+
+- **Start with a baseline:** I will look at the distribution of the actual classes using a ggplot2 bar chart and calculate the null error rate.
+
+- **Compare different thresholds:** I will use thresholds of 0.2, 0.5, and 0.8 to create predictions. For each threshold, I will create a confusion matrix showing true positives, false positives, true negatives, and false negatives.
+
+- **Calculate performance metrics:** I will calculate accuracy, precision, recall, and F1 score for each threshold and then compare results to see how changing the threshold affects the model.
+
+- **Real- world examples:** I will look into examples when 0.2 threshold might be useful and when 0.8 makes more sense.
