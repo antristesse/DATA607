@@ -9,3 +9,176 @@ editor: visual
 I selected six 2025 movies nominated for Best picture at the recent Oscars and collected ratings from five people using a 1–5 scale. Not every participant had seen every movie, so some ratings are missing, i will treat them as unavailable responses.
 
 I will store data in SQLite database in three tables: users, movies, and ratings. Then I will use a JOIN to combine the tables into a nicer format with names, movie titles, and rating. I plan to load SQL data into R as a dataframe and then summarize the ratings and calculate statistical summary for each movie.
+
+# SQL database
+
+I first created movie_ratings.db in SQLite with three relational tables: users, movies and ratings. I used separate tables to avoid repeating user and movie information and connected them using their ids. I then used `INSERT INTO` to populate each table with the collected data and a `JOIN` to combine all three tables into a readable dataset.
+
+```{sql}
+--| eval: false
+CREATE TABLE movies (
+    movie_id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL
+);
+
+CREATE TABLE users (
+    user_id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE ratings (
+    user_id INTEGER,
+    movie_id INTEGER,
+    rating INTEGER,
+    FOREIGN KEY (user_id) REFERENCES users(user_id),
+    FOREIGN KEY (movie_id) REFERENCES movies(movie_id)
+);
+
+INSERT INTO movies (movie_id, title)
+VALUES
+    (1, 'Sinners'),
+    (2, 'One Battle After Another'),
+    (3, 'Frankenstein'),
+    (4, 'Hamnet'),
+    (5, 'Marty Supreme'),
+    (6, 'F1');
+
+INSERT INTO users (user_id, name)
+VALUES
+    (1, 'Ana'),
+    (2, 'Joe'),
+    (3, 'Christine'),
+    (4, 'Anna'),
+    (5, 'Aika');
+INSERT INTO ratings (user_id, movie_id, rating)
+VALUES
+    (1, 1, 5),
+    (1, 2, 5),
+    (1, 3, NULL),
+    (1, 4, 4),
+    (1, 5, 4),
+    (1, 6, NULL),
+
+    (2, 1, 3),
+    (2, 2, 4),
+    (2, 3, 5),
+    (2, 4, 4),
+    (2, 5, 3),
+    (2, 6, 3),
+
+    (3, 1, 3),
+    (3, 2, 3),
+    (3, 3, NULL),
+    (3, 4, 3),
+    (3, 5, 4),
+    (3, 6, 5),
+
+    (4, 1, 5),
+    (4, 2, NULL),
+    (4, 3, 5),
+    (4, 4, 4),
+    (4, 5, 5),
+    (4, 6, 5),
+
+    (5, 1, 4),
+    (5, 2, 3),
+    (5, 3, 4),
+    (5, 4, NULL),
+    (5, 5, 4),
+    (5, 6, 2);
+SELECT
+    users.name,
+    movies.title,
+    ratings.rating
+FROM ratings
+JOIN users
+    ON ratings.user_id = users.user_id
+JOIN movies
+    ON ratings.movie_id = movies.movie_id;
+
+```
+
+I connected R directly to my SQLite database using DBI and RSQLite. I used dbGetQuery() to run a SQL JOIN and load the combined results into R as a dataframe called `movie_ratings`
+
+```{r}
+#| message: false
+library(DBI)
+library(RSQLite)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+mydb <- dbConnect(SQLite(), "movie_ratings.db")
+```
+
+```{r}
+movie_ratings <- dbGetQuery(mydb, "
+SELECT
+    users.name,
+    movies.title,
+    ratings.rating
+FROM ratings
+JOIN users
+    ON ratings.user_id = users.user_id
+JOIN movies
+    ON ratings.movie_id = movies.movie_id
+ORDER BY users.user_id, movies.movie_id;
+")
+glimpse(movie_ratings)
+
+```
+
+## Missing values
+
+Not every participant had seen every movie, so some ratings are missing. Missing ratings from SQL were imported into R as NAs.
+
+```{r}
+movie_ratings %>%
+  filter(is.na(rating))
+```
+
+## Movie summary
+
+```{r}
+movie_summary <- movie_ratings %>%
+  group_by(title) %>%
+  summarise(
+    n_ratings = sum(!is.na(rating)),
+    mean_rating = round(mean(rating, na.rm = TRUE), 2),
+    median_rating = round(median(rating, na.rm = TRUE), 2),
+    sd_rating = round(sd(rating, na.rm = TRUE), 2)
+  )
+
+movie_summary
+
+```
+
+I also created a bar chart showing the average rating per movie, ordered from highest to lowest.
+
+```{r}
+ggplot(movie_summary, aes(x = reorder(title, mean_rating), y = mean_rating)) +
+  geom_col() +
+  coord_flip()
+```
+
+# User summary
+
+```{r}
+user_summary <- movie_ratings %>%
+  group_by(name) %>%
+  summarise(
+    n_ratings = sum(!is.na(rating)),
+    mean_rating = round(mean(rating, na.rm = TRUE), 2)
+  )
+
+user_summary
+```
+
+# Results
+
+The results show that the movies received different numbers of ratings because not every participant had seen every movie. Missing ratings were kept as NA and excluded from the statistical calculations. The summary tables make it easy to compare movie-level and user-level rating patterns.
+
+```{r}
+dbDisconnect(mydb)
+```
