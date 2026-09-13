@@ -14,4 +14,150 @@ For this assignment, I will evaluate a binary classification model that predicts
 
 - **Calculate performance metrics:** I will calculate accuracy, precision, recall, and F1 score for each threshold and then compare results to see how changing the threshold affects the model.
 
-- **Real- world examples:** I will look into examples when 0.2 threshold might be useful and when 0.8 makes more sense.
+- **Real-world examples:** I will look into examples when 0.2 threshold might be useful and when 0.8 makes more sense
+
+# Data loading and calculations
+
+## Baseline
+
+```{r}
+#| message: false
+library(dplyr)
+library(ggplot2)
+penguins <- read.csv("https://raw.githubusercontent.com/acatlin/data/refs/heads/master/penguin_predictions.csv")
+
+class_distr <- penguins %>%
+  count(sex)
+class_distr
+null_error_rate <- min(class_distr$n) / sum(class_distr$n)
+null_error_rate
+
+
+```
+
+```{r}
+ggplot(penguins, aes(x = sex, fill = sex)) +
+  geom_bar(aes(y = after_stat(count / sum(count)))) +
+  geom_text(aes(
+    y = after_stat(count / sum(count)),
+    label = scales::percent(after_stat(count / sum(count)))),stat = "count", vjust = -0.5) +
+  labs(
+    title = "Actual class distribution",
+    x = "Sex",
+    y = "Percent"
+  ) + theme(legend.position = "none") +
+  scale_y_continuous(labels = scales::percent)
+
+```
+
+We have 54 male and 39 female penguins, so male is the majority class. Since the null model predicts the most common class every time, all 39 female penguins will be classified incorrectly. The null error rate of 41.9% gives us a baseline for evaluating the model. Our model should have a lower error rate than the baseline.
+
+## Comparing Thresholds
+
+```{r}
+penguins <- penguins %>%
+  mutate(
+    thr_20 = ifelse(.pred_female > 0.2, 1, 0),
+    thr_50 = ifelse(.pred_female > 0.5, 1, 0),
+    thr_80 = ifelse(.pred_female > 0.8, 1, 0)
+  )
+
+```
+
+```{r}
+TP_20 <- sum(penguins$sex == "female" & penguins$thr_20 == 1)
+
+FP_20 <- sum(penguins$sex == "male" & penguins$thr_20 == 1)
+
+TN_20 <- sum(penguins$sex == "male" & penguins$thr_20 == 0)
+
+FN_20 <- sum(penguins$sex == "female" & penguins$thr_20 == 0)
+
+```
+
+```{r}
+TP_50 <- sum(penguins$sex == "female" & penguins$thr_50 == 1)
+
+FP_50 <- sum(penguins$sex == "male" & penguins$thr_50 == 1)
+
+TN_50 <- sum(penguins$sex == "male" & penguins$thr_50 == 0)
+
+FN_50 <- sum(penguins$sex == "female" & penguins$thr_50 == 0) 
+
+```
+
+```{r}
+TP_80 <- sum(penguins$sex == "female" & penguins$thr_80 == 1)
+
+FP_80 <- sum(penguins$sex == "male" & penguins$thr_80 == 1)
+
+TN_80 <- sum(penguins$sex == "male" & penguins$thr_80 == 0)
+
+FN_80 <- sum(penguins$sex == "female" & penguins$thr_80 == 0)
+
+```
+
+Threshold 0.2
+
+```{r}
+table(Actual = penguins$sex, Predicted = penguins$thr_20)
+
+```
+
+Threshold 0.5
+
+```{r}
+table(Actual = penguins$sex, Predicted = penguins$thr_50)
+```
+
+Threshold 0.8
+
+```{r}
+table(Actual = penguins$sex, Predicted = penguins$thr_80)
+```
+
+At the 0.2 threshold the model predicted more penguins as female. It correctly identified 37 females, but also incorrectly classified 6 males as female. As the threshold increased the model predicted female less often. At the 0.8 threshold, it correctly identified 36 females and incorrectly classified only 2 males as female.
+
+## Performance metrics
+
+```{r}
+# Threshold 0.2
+accuracy_20 <- (TP_20 + TN_20) / (TP_20 + FP_20 + TN_20 + FN_20)
+precision_20 <- TP_20 / (TP_20 + FP_20)
+recall_20 <- TP_20 / (TP_20 + FN_20)
+f1_20 <- 2 * (precision_20 * recall_20) / (precision_20 + recall_20)
+
+# Threshold 0.5
+accuracy_50 <- (TP_50 + TN_50) / (TP_50 + FP_50 + TN_50 + FN_50)
+precision_50 <- TP_50 / (TP_50 + FP_50)
+recall_50 <- TP_50 / (TP_50 + FN_50)
+f1_50 <- 2 * (precision_50 * recall_50) / (precision_50 + recall_50)
+
+# Threshold 0.8
+accuracy_80 <- (TP_80 + TN_80) / (TP_80 + FP_80 + TN_80 + FN_80)
+precision_80 <- TP_80 / (TP_80 + FP_80)
+recall_80 <- TP_80 / (TP_80 + FN_80)
+f1_80 <- 2 * (precision_80 * recall_80) / (precision_80 + recall_80)
+```
+
+```{r}
+perf_metrics <- data.frame(
+  Threshold = c(0.2, 0.5, 0.8),
+  Accuracy = round(c(accuracy_20, accuracy_50, accuracy_80), 2),
+  Precision = round(c(precision_20, precision_50, precision_80), 2),
+  Recall = round(c(recall_20, recall_50, recall_80), 2),
+  F1 = round(c(f1_20, f1_50, f1_80), 2)
+)
+
+perf_metrics
+```
+
+All three thresholds perform better than the null model. The null error rate is 41.9%, while the model error rates are about 8.6% at the 0.2 threshold, 6.5% at 0.5, and 5.4% at 0.8. This shows that the model performs much better than simply predicting the majority class every time.
+
+## Threshold use cases
+
+In penguins dataset at a 0.2 threshold the model correctly identified 37 of 39 female penguins, but also incorrectly identified 6 males as female. So lower threshold can be useful when finding as many positive cases as possible is more important than having some false positives. For example, in medical screening, it can be better to find more patients for additional testing than to miss identifying potentially dangerous condition.
+
+At a 0.8 threshold, only 2 males were incorrectly classified as female. A higher threshold can be useful when false positives are more costly, for example when detecting fraud before blocking a transaction.
+
+In general, choosing threshold should be linked to the context and what type of error we are trying to avoid.
