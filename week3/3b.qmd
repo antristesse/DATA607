@@ -1,0 +1,31 @@
+---
+title: "Assignment 3b"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+    grid:
+      body-width: 800px
+---
+
+## Approach
+
+For this assignment I will use a time series dataset with daily sales for multiple product categories. I think it will be a clear easy example for calculating window functions across different product categories. I plan to:
+
+-  **Year-to-date average.** Calculate the average daily sales from the beginning of the year through each date for each product category.
+
+-  **6-day moving average.** Calculate the average sales for the current day and the previous five days for each product category.
+
+- **Compare the results.** Look at how the year-to-date and 6-day moving averages change over time for each category.
+
+One challenge I expect is making sure the dates are in the correct order and that the calculations are done separately for each product category. I will also need to handle the first five days, when there is no data yet to calculate a 6-day moving average.
