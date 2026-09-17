@@ -22,10 +22,87 @@ format:
 
 For this assignment I will use a time series dataset with daily sales for multiple product categories. I think it will be a clear easy example for calculating window functions across different product categories. I plan to:
 
--  **Year-to-date average.** Calculate the average daily sales from the beginning of the year through each date for each product category.
+- **Year-to-date average.** Calculate the average daily sales from the beginning of the year through each date for each product category.
 
--  **6-day moving average.** Calculate the average sales for the current day and the previous five days for each product category.
+- **6-day moving average.** Calculate the average sales for the current day and the previous five days for each product category.
 
 - **Compare the results.** Look at how the year-to-date and 6-day moving averages change over time for each category.
 
 One challenge I expect is making sure the dates are in the correct order and that the calculations are done separately for each product category. I will also need to handle the first five days, when there is no data yet to calculate a 6-day moving average.
+
+## Data loading and preparation
+
+For this assignment, I will use a retail sales dataset containing transactions from three product categories: Beauty, Clothing, and Electronics. The dataset includes transaction dates and total sales amounts, which I will use to calculate daily sales for each category and apply window functions.
+
+<https://github.com/antristesse/DATA607/blob/main/week3/retailsales2023.csv>
+
+```{r}
+#| message: false
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+sales <- read.csv(
+  "https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/week3/retailsales2023.csv"
+)
+head(sales)
+
+```
+
+I selected the date, product category, and total sales amount from the original dataset and renamed the columns. I converted the date column to a date format and filtered the data to 2023. Since there can be multiple transactions for the same category on the same day, I grouped the data by date and category and summed the sales to calculate total daily sales for each category.
+
+```{r}
+daily_sales <- sales %>%
+  select(
+    date = Date,
+    category = Product_Category,
+    sales = Total_Amount) %>%
+  mutate(date = as.Date(date, format = "%m/%d/%Y")) %>%
+  filter(format(date, "%Y") == "2023") %>%
+  group_by(date, category) %>%
+  summarise(daily_sales = sum(sales),.groups = "drop") %>%
+  arrange(category, date)
+
+head(daily_sales)
+```
+
+## Year-To-Date average
+
+```{r}
+daily_sales <- daily_sales %>%
+  group_by(category) %>%
+  mutate(ytd_avg = round(cummean(daily_sales), 2))
+head(daily_sales)
+```
+
+## 6-day average
+
+I used <https://rpubs.com/SurreyDataGirl/moving-averages> as a reference for calculating moving averages in R. The article demonstrates how `rollmean()`can be used to calculate moving averages over a specified window, which I adapted to calculate the 6-day moving average required for this assignment.
+
+```{r}
+#| message: false
+library(zoo)
+daily_sales <- daily_sales %>%
+  group_by(category) %>%
+  mutate(moving_avg_6 = round(rollmean(daily_sales, k = 6, align = "right", fill = NA),2))
+head(daily_sales)
+```
+
+## Comparison
+
+```{r}
+ggplot(daily_sales, aes(x = date)) +
+  geom_line(aes(y = ytd_avg,color = "YTD Average")) +
+  geom_line(aes(y = moving_avg_6, color = "6-day Moving Average")) +
+  facet_wrap(~ category) +
+  scale_x_date(date_breaks = "3 months", date_labels = "%b") +
+  scale_color_manual(values = c("YTD Average" = "#E76F51","6-day Moving Average" = "#287271")) +
+  labs(
+    title = "YTD and Moving Average Sales by Category",
+    x = "2023",
+    y = "Average Sales",
+    color = "Measure") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+The comparison shows that the YTD average is relatively smooth and stable for all three product categories because it includes all observations from the beginning of the year. The 6-day moving average changes much more over time because it only uses the six most recent observations, making it more sensitive to short-term changes in sales.
