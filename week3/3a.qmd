@@ -1,0 +1,25 @@
+---
+title: "Assignment 3b"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+    grid:
+      body-width: 800px
+---
+
+## Approach
+
+For this assignment I will use the movie ratings database from the previous assignment. The goal is to use Global Baseline Estimate to predict ratings for movies not yet seen by users. I will calculate the overall mean of all available ratings. Then I will calculate the average rating for each user and each movie and compare these averages to the global mean to find the user and movie effects. Then I will identify missing ratings, and assghn them new predicted values.
+
+## 
