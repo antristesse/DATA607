@@ -20,6 +20,82 @@ format:
 
 ## Approach
 
-For this assignment I will use the movie ratings database from the previous assignment. The goal is to use Global Baseline Estimate to predict ratings for movies not yet seen by users. I will calculate the overall mean of all available ratings. Then I will calculate the average rating for each user and each movie and compare these averages to the global mean to find the user and movie effects. Then I will identify missing ratings, and assghn them new predicted values.
+For this assignment I will use the movie ratings database from the previous assignment. The goal is to use Global Baseline Estimate to predict ratings for movies not yet seen by users. I will calculate the overall mean of all available ratings. Then I will calculate the average rating for each user and each movie and compare these averages to the global mean to find the user and movie effects. Then I will identify missing ratings, and assign them new predicted values.
 
-## 
+## Data loading
+
+```{r}
+#| message: false
+library(DBI)
+library(RSQLite)
+library(dplyr)
+mydb <- dbConnect(SQLite(), "../week2/movie_ratings.db")
+movie_ratings <- dbGetQuery(mydb, " 
+SELECT users.name, movies.title, ratings.rating
+FROM ratings
+JOIN users 
+    ON ratings.user_id = users.user_id
+JOIN movies
+    ON ratings.movie_id = movies.movie_id
+ORDER BY users.user_id, movies.movie_id;")
+movie_ratings
+```
+
+## Global mean
+
+I calculated the global mean using all available movie ratings while excluding missing values. This represents the overall average rating in the dataset.
+
+```{r}
+global_mean <- movie_ratings %>%
+  summarise(mean_rating = mean(rating, na.rm = TRUE)) %>%
+  pull(mean_rating)
+global_mean
+
+```
+
+## User effect
+
+I calculated the average rating for each user first and then user effect as the difference between each user's average and the global mean, showing whether a user generally rates movies higher or lower than average.
+
+```{r}
+user_avg <- movie_ratings %>%
+  group_by(name) %>%
+  summarise(user_avg = round(mean(rating, na.rm = TRUE),2),
+            user_effect = user_avg - global_mean)
+user_avg
+
+```
+
+## Movie effect
+
+Same strategy with movies
+
+```{r}
+movie_avg <- movie_ratings %>%
+  group_by(title) %>%
+  summarise(movie_avg = round(mean(rating, na.rm = TRUE),2),
+            movie_effect = movie_avg - global_mean)
+movie_avg
+```
+
+## Replacing missing values with global baseline estimate
+
+Now I identified the missing ratings and used LEFT JOIN to combine them with the user and movie effects. I used the Global Baseline Estimate formula:
+
+Predicted Rating = Global Mean + User Effect + Movie Effect
+
+```{r}
+missing_ratings <- movie_ratings %>%
+  filter(is.na(rating)) %>%
+  left_join(user_avg, by = "name") %>%
+  left_join(movie_avg, by = "title")
+missing_ratings
+```
+
+```{r}
+missing_ratings %>%
+  mutate(pred_rating = round(global_mean + user_effect + movie_effect, 2)) %>%
+  select(name, title, pred_rating)
+```
+
+The Global Baseline Estimate was used to predict the five missing ratings based on the overall mean, user effect, and movie effect. The predicted ratings ranged from 3.19 to 5.21. One limitation of this method is that the predicted values are not restricted to the original 1–5 rating scale, which is why one prediction was higher than 5.
