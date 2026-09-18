@@ -1,5 +1,5 @@
 ---
-title: "Assignment 3b"
+title: "Assignment 3a"
 author: "Anastasiia Gmyrina"
 editor: visual
 format:
