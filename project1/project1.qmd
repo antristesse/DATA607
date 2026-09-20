@@ -1,0 +1,31 @@
+---
+title: "Project 1"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+    grid:
+      body-width: 800px
+---
+
+## Approach
+
+For this project, I will work with the chess tournament text file and turn it into a clean dataset. The main challenge will be working with a text file where the information is spread across multiple lines. There are a few patterns in the file. For example, each player’s information is spread across two lines followed by a separator, and the round results contain information about the player’s opponents. I will use these patterns to extract the required information, create a dataframe, and export the final results as a CSV file.
+
+```{mermaid}
+flowchart LR
+    A[Read TXT file] --> B[Clean and structure data]
+    B --> C[Extract player and opponent information]
+    C --> D[Calculate average opponent rating]
+    D --> E[Create dataframe and export CSV]
+```
