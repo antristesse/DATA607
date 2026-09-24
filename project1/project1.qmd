@@ -24,8 +24,132 @@ For this project, I will work with the chess tournament text file and turn it in
 
 ```{mermaid}
 flowchart LR
-    A[Read TXT file] --> B[Clean and structure data]
-    B --> C[Extract player and opponent information]
-    C --> D[Calculate average opponent rating]
-    D --> E[Create dataframe and export CSV]
+    A(Read TXT file) --> B(Clean and structure data)
+    B --> C(Extract player and opponent information)
+    C --> D(Calculate average opponent rating)
+    D --> E(Create dataframe and export CSV)
+```
+
+## Read txt file
+
+Since each player's information is spread across multiple lines, I used `readLines()` to read file line by line.
+
+```{r}
+#| message: false
+#| warning: false
+library(tidyverse)
+chess <- readLines("tournamentinfo.txt")
+head(chess,10)
+```
+
+I removed the first four lines since it's just the headers, and checked the first 10 lines again to make sure the dataset now starts with the first player record.
+
+```{r}
+chess_data <- chess[-(1:4)]
+head(chess_data, 10)
+```
+
+## Clean and structure data
+
+Since `readLines()` stores each line of the text file as an element in a vector, we can use vector indexing to select specific lines by their position. We found a repeating pattern where the player information is on lines 1, 4, 7, etc., and the additional details are on lines 2, 5, 8, etc. We can use `seq()` to select these lines and store them in two separate vectors.
+
+```{r}
+player_info <- chess_data[seq(1, length(chess_data), by = 3)]
+head(player_info,3)
+```
+
+```{r}
+details_info <- chess_data[seq(2, length(chess_data), by = 3)]
+head(details_info,3)
+```
+
+Since player_info is currently a vector, I converted it into a tibble so I can use separate_wider_delim() to split the player information into separate columns.
+
+```{r}
+players <- tibble(player_info = player_info)
+players <- players %>%
+  separate_wider_delim(player_info,delim = "|", names = c("player_num", "player_name", "points","round1", "round2", "round3", "round4", "round5", "round6", "round7"),too_many = "drop")
+head(players)
+```
+
+```{r}
+details <- tibble(details_info = details_info)
+details <- details %>%
+  separate_wider_delim(details_info, delim = "|", names = c("state", "rating_info"),too_many = "drop")
+head(details)
+```
+
+The rating_info column contains the player ID, pre-rating, and post-rating in one string. I will use str_extract() to get the pre-rating, convert it to numeric and keep only two columns I need.
+
+```{r}
+details <- details %>% mutate(pre_rating = as.numeric(str_extract(rating_info, "(?<=R: )\\d+"))) %>% select(state, pre_rating)
+
+head(details)
+```
+
+## Extract player and opponent info
+
+The round columns contain the game result and the opponent's player number. I used pivot_longer() to combine the seven round columns into rows, so each round can be analyzed separately.
+
+```{r}
+opponents <- players %>%
+  pivot_longer(
+    cols = round1:round7,
+    names_to = "round",
+    values_to = "result")
+
+opponents <- opponents %>%
+  mutate(opponent = str_extract(result, "\\d+"))
+head(opponents, 10)
+```
+
+## Calculate average opponent rating
+
+Since the rows in `details` are in the same order as the player numbers, I used row_number() to add the corresponding player number to each row. This allows each player's pre-rating to be matched with their player number.
+
+```{r}
+details <- details %>% mutate(player_num = row_number())
+head(details,2)
+```
+
+Now opponents has the opponent number, and `details` has the player number and pre-rating. I need to match them.
+
+```{r}
+opponents <- opponents %>%
+  mutate(opponent = as.numeric(opponent)) %>%
+  left_join(details, by = c("opponent" = "player_num"))
+head(opponents,3)
+```
+
+Now we can calculate the average opponents rating for each of the players
+
+```{r}
+avg_ratings <- opponents %>%
+  group_by(player_num) %>%
+  summarise(avg_opponent_rating = round(mean(pre_rating, na.rm = TRUE)))
+head(avg_ratings,3)
+```
+
+## Create a dataframe and export to CSV
+
+I combined the player information with the average opponent ratings and player details using LEFT_JOIN
+
+```{r}
+players <- players %>%
+  select(player_num, player_name, points) %>%
+  left_join(avg_ratings, by = "player_num") %>%
+  mutate(player_num = as.numeric(player_num)) %>%
+  left_join(details, by = "player_num")
+
+head(players, 3)
+```
+
+Finally, I selected and organized the columns to match the assignment requirements and exported it as csv file.
+
+```{r}
+players <- players %>%
+  select(player_name, state, points, pre_rating, avg_opponent_rating)
+
+head(players, 3)
+write_csv(players, "chess_players.csv")
 ```
