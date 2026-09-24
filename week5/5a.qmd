@@ -1,0 +1,25 @@
+---
+title: "Assignment 5a"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+    grid:
+      body-width: 800px
+---
+
+## Approach
+
+The goal of this assignment is to practice tidying and reshaping data using `tidyr` and `dplyr`. I will first load the airline data and clean the missing values. Since the destinations are currently stored as separate columns, I will use pivoting to reshape the data into a tidy format, where each variable is a column and each observation is a row. I will then calculate and compare the arrival delay rates for Alaska and AM West across the five destinations and summarize the results.
+
+## 
