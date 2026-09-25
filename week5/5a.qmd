@@ -22,4 +22,120 @@ format:
 
 The goal of this assignment is to practice tidying and reshaping data using `tidyr` and `dplyr`. I will first load the airline data and clean the missing values. Since the destinations are currently stored as separate columns, I will use pivoting to reshape the data into a tidy format, where each variable is a column and each observation is a row. I will then calculate and compare the arrival delay rates for Alaska and AM West across the five destinations and summarize the results.
 
-## 
+## Data Loading
+
+I loaded the CSV file containing arrival information for two airlines, Alaska and AM West, across five destinations. The data separates flights into on-time and delayed categories.
+
+```{r}
+#| message: false
+
+library(dplyr)
+library(tidyr)
+library(readr)
+library(ggplot2)
+
+airline_delays <- read_csv("airlines.csv")
+airline_delays
+```
+
+## Filling Missing Values
+
+Some airline names are missing because the original table lists the airline name only once for each pair of on-time and delayed rows. Since the missing row belongs to the airline listed directly above it, I used `fill()` to carry the airline name downward.
+
+```{r}
+airline_delays <- airline_delays %>% 
+  fill(Airline)
+
+airline_delays
+```
+
+## Reshaping Data Into A Tidy Format
+
+Since the city columns all represent values of the same variable, `Destination`, I used `pivot_longer()` to reshape the data from wide to long format. This creates one `Destination` column and one `Flights` column, following the tidy-data principle that each variable should have its own column.
+
+```{r}
+airline_delays <- airline_delays %>%
+  pivot_longer(
+    cols = !c(Airline, Status),
+    names_to = "Destination",
+    values_to = "Flights"
+      )
+airline_delays
+```
+
+## Comparing Airline Delay Rates
+
+I first calculated the total number of flights, delayed flights, and overall delay rate for each airline.
+
+```{r}
+airline_delays %>%
+  group_by(Airline) %>%
+  summarise(
+    total_flights = sum(Flights),
+    delayed_flights = sum(Flights[Status == "delayed"]),
+    delay_rate = round(delayed_flights / total_flights * 100,2)
+  )
+```
+
+Although AM West had more delayed flights (787 compared with 501 for Alaska), it also had a much larger number of total flights. Alaska had a higher overall delay rate of 13.27%, compared with 10.89% for AM West.
+
+Next, I looked at the delay rates by destination to see whether the overall pattern was consistent across the five cities. I grouped the data by both airline and destination and calculated the delay rate for each combination.
+
+```{r}
+delay_by_destination <- airline_delays %>%
+  group_by(Airline, Destination) %>%
+  summarise(
+    total_flights = sum(Flights),
+    delayed_flights = sum(Flights[Status == "delayed"]),
+    delay_rate = round(delayed_flights / total_flights * 100, 2),
+    .groups = "drop"
+  )
+delay_by_destination
+```
+
+The results show an interesting pattern. Although Alaska had a higher overall delay rate (13.27% vs 10.89% for AM West), AM West had a higher delay rate at every individual destination. This suggests that the overall rates are affected by how each airline's flights are distributed across the five destinations. For example, a large share of AM West's flights went to Phoenix, where its delay rate was relatively low.
+
+## Visualization
+
+To visualize the destination-level differences, I used a dumbbell plot connecting the delay rates of the two airlines for each destination.
+
+```{r}
+# Plot
+ggplot(
+  delay_by_destination,
+  aes(
+    x = delay_rate,
+    y = reorder(Destination, delay_rate),
+    color = Airline,
+    group = Destination
+  )
+) +
+  geom_line(color = "grey70", linewidth = 1.2) +
+  geom_point(size = 4) +
+  geom_text(
+    aes(
+      label = paste0(delay_rate, "%"),
+      hjust = ifelse(Airline == "ALASKA", 1.2, -0.2)
+    ),
+    show.legend = FALSE
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0.15, 0.15))
+  ) +
+  labs(
+    title = "Arrival Delay Rates by Destination",
+    subtitle = "AM West has a higher delay rate at every destination",
+    x = "Delay Rate (%)",
+    y = NULL,
+    color = "Airline"
+  ) +
+  theme_minimal()
+```
+
+## Summary 
+
+The goal of this assignment was to practice cleaning, tidying, and reshaping data using `tidyr` and `dplyr`. I used `fill()` to complete the missing airline names and `pivot_longer()` to transform the original wide dataset into a tidy format that was easier to group and analyze.
+
+The overall comparison showed that Alaska had a higher delay rate than AM West. However, when I compared the airlines separately by destination, AM West had a higher delay rate at every destination. This difference shows that overall results can sometimes hide patterns within individual groups, especially when the number of observations is distributed differently across those groups.
+
+As a next step, the analysis could include additional variables such as departure delays, flight distance, or time of day to explore what factors may contribute to arrival delays.
