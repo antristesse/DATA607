@@ -82,7 +82,13 @@ head(details)
 The rating_info column contains the player ID, pre-rating, and post-rating in one string. I will use str_extract() to get the pre-rating, convert it to numeric and keep only two columns I need.
 
 ```{r}
-details <- details %>% mutate(pre_rating = as.numeric(str_extract(rating_info, "(?<=R: )\\d+"))) %>% select(state, pre_rating)
+details <- details %>%
+  mutate(
+    pre_rating = as.numeric(
+      str_trim(str_extract(rating_info, "(?<=R:)\\s*\\d+"))
+    )
+  ) %>%
+  select(state, pre_rating)
 
 head(details)
 ```
