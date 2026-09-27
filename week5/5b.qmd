@@ -1,0 +1,31 @@
+---
+title: "Assignment 5b"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+    grid:
+      body-width: 800px
+---
+
+## Approach
+
+For this assignment, I will calculate how each player was expected to perform based on their pre-tournament Elo rating and the ratings of their opponents. FFor each game, I will calculate the expected score using the Elo formula:
+
+$$
+E_A = \frac{1}{1 + 10^{(R_B-R_A)/400}}
+$$
+
+where $R_A$ is the player's rating and $R_B$ is the opponent's rating. I use the expected-score formula described in [How Elo Ratings Actually Work](https://www.chess.com/blog/NateSolon/how-elo-ratings-actually-work) on Chess.com.
+
+I will add the expected scores across all rounds to get each player's expected tournament score and compare it with the actual points earned. The difference will be used to identify the five players who most overperformed and the five who most underperformed their Elo expectations.
