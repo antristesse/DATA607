@@ -29,3 +29,205 @@ $$
 where $R_A$ is the player's rating and $R_B$ is the opponent's rating. I use the expected-score formula described in [How Elo Ratings Actually Work](https://www.chess.com/blog/NateSolon/how-elo-ratings-actually-work) on Chess.com.
 
 I will add the expected scores across all rounds to get each player's expected tournament score and compare it with the actual points earned. The difference will be used to identify the five players who most overperformed and the five who most underperformed their Elo expectations.
+
+## Data preparation
+
+Since this assignment uses the tournament data from Project 1, i first recreated the player, rating ans opponent data needed for Elo calculations from the original txt file.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+
+# Read original tournament data
+chess <- readLines("../project1/tournamentinfo.txt")
+chess_data <- chess[-(1:4)]
+
+# Separate player and rating/detail lines
+player_info <- chess_data[seq(1, length(chess_data), by = 3)]
+details_info <- chess_data[seq(2, length(chess_data), by = 3)]
+
+# Create player data
+players <- tibble(player_info = player_info) %>%
+  separate_wider_delim(
+    player_info,
+    delim = "|",
+    names = c(
+      "player_num", "player_name", "points",
+      "round1", "round2", "round3", "round4",
+      "round5", "round6", "round7"
+    ),
+    too_many = "drop"
+  )
+
+# Create player rating data
+details <- tibble(details_info = details_info) %>%
+  separate_wider_delim(
+    details_info,
+    delim = "|",
+    names = c("state", "rating_info"),
+    too_many = "drop"
+  ) %>%
+  mutate(
+    pre_rating = as.numeric(
+      str_trim(str_extract(rating_info, "(?<=R:)\\s*\\d+"))
+    ),
+    player_num = row_number()
+  ) %>%
+  select(player_num, state, pre_rating)
+
+# Create one row for each player-opponent game
+opponents <- players %>%
+  pivot_longer(
+    cols = round1:round7,
+    names_to = "round",
+    values_to = "result"
+  ) %>%
+  mutate(
+    opponent = as.numeric(str_extract(result, "\\d+"))
+  ) %>%
+  left_join(
+    details,
+    by = c("opponent" = "player_num")
+  )
+
+head(opponents, 2)
+```
+
+I will start with the `opponents` data frame created in Project 1. It contains one row for each player-opponent game, along with the opponent's pre-tournament rating.
+
+For the ELO calculation, I created a new data frame called `elo_data` and kept only the player number and name, opponent number, and opponent rating. I renamed `pre_rating` to `opponent_rating` to make it clear that this rating belongs to the opponent.
+
+```{r}
+elo_data <- opponents %>% 
+  select(player_num, player_name, opponent, pre_rating) %>% 
+  rename(opponent_rating = pre_rating)
+head(elo_data, 2)  
+```
+
+The ELO formula requires both the player's rating and the opponent's rating. The `details` data frame from Project 1 contains each player's pre-tournament rating. Before joining the data, I converted `player_num` to numeric so it matches the data type in `details`. I then joined the player's rating using `player_num` and renamed it `player_rating`.
+
+```{r}
+elo_data <- elo_data %>%
+  mutate(player_num = as.numeric(player_num)) %>%
+  left_join(
+    details %>%
+      select(player_num, pre_rating) %>%
+      rename(player_rating = pre_rating),
+    by = "player_num")
+
+head(elo_data, 2)
+```
+
+## Elo Expected Score
+
+Now I have both ratings, so I can calculate the expected score for each game. I used the ELO expected-score formula, which estimates the expected result based on the difference between the two players' ratings. I used `mutate()` to apply the formula to every game and rounded the result to three decimal places.
+
+```{r}
+elo_data <- elo_data %>%
+  mutate(expected_score = round(1 / (1 + 10^((opponent_rating - player_rating) / 400)),3))
+
+head(elo_data, 7)
+```
+
+## Tournament Results
+
+Each row currently contains the expected score for one game. To calculate each player's expected score for the entire tournament, I grouped the data by player and added their expected scores across all games.
+
+```{r}
+elo_summary <- elo_data %>%
+  group_by(player_num, player_name) %>%
+  summarise(
+    expected_score = round(sum(expected_score, na.rm = TRUE), 2),
+    .groups = "drop"
+  )
+
+head(elo_summary)
+```
+
+Now I need to compare expected score with the scoreplayers actually earned. I joined the `points` column from the original player data using `player_num`, then calculated the difference between the actual and expected scores.
+
+```{r}
+elo_summary <- elo_summary %>%
+  left_join(
+    players %>%
+      select(player_name, points),
+    by = "player_name"
+  ) %>%
+  mutate(
+    points = as.numeric(points),
+    difference = round(points - expected_score, 2)
+  )
+
+head(elo_summary)
+```
+
+## Top Overperformers and Underperformers
+
+I sorted the players by the difference between their actual and expected scores. The five largest positive differences represent the players who most overperformed relative to their expected score, while the five lowest differences represent the players who most underperformed.
+
+```{r}
+top_overperformers <- elo_summary %>%
+  arrange(desc(difference)) %>%
+  slice_head(n = 5)
+
+top_overperformers
+```
+
+```{r}
+top_underperformers <- elo_summary %>%
+  arrange(difference) %>%
+  slice_head(n = 5)
+
+top_underperformers
+```
+
+The results show a wide range of performance relative to Elo expectations. Aditya Bajaj had the largest overperformance, scoring 6.0 points compared with an expected score of 1.95, a difference of +4.05. On the other side, Loren Schwiebert had the largest underperformance, scoring 3.5 points compared with an expected 6.28, a difference of -2.78. This shows that actual tournament performance can differ substantially from what the players' pre-tournament ratings would predict.
+
+## Performance Visualization
+
+To make the differences easier to compare, I combined the five largest overperformers and underperformers in one chart. The center line represents performance exactly as expected based on ELO ratings. Positive values show players who scored above expectations, while negative values show players who scored below expectations.
+
+```{r}
+performance_plot <- bind_rows(
+  top_overperformers,
+  top_underperformers
+)
+
+ggplot(performance_plot,aes(x = difference, y = reorder(player_name, difference),
+    fill = difference > 0)) +
+  geom_col(width = 0.7) +
+  geom_vline(xintercept = 0, color = "grey40",linewidth = 0.8) +
+  geom_text(
+    aes(
+      label = ifelse(
+        difference > 0,
+        paste0("+", difference),
+        difference
+      ),
+      hjust = ifelse(difference > 0, -0.15, 1.15)
+    ),
+    size = 3.5
+  ) +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue","FALSE" = "coral"),
+    labels = c("TRUE" = "Overperformed","FALSE" = "Underperformed")) +
+  scale_x_continuous(expand = expansion(mult = c(0.15, 0.15))) +
+  labs(
+    title = "Who Beat Their Elo Expectations?",
+    subtitle = "Difference between actual and expected tournament scores",
+    x = "Actual Score - Expected Score",
+    y = NULL,
+    fill = NULL
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom", panel.grid.minor = element_blank())
+
+```
+
+## Summary
+
+Using the players' pre-tournament Elo ratings, I calculated an expected score for each game and added these values to get each player's expected tournament score. The comparison with actual results showed some large differences. Aditya Bajaj had the largest overperformance, scoring 4.05 points above expectation, while Loren Schwiebert had the largest underperformance, scoring 2.78 points below expectation.
+
+The results show that Elo ratings can be useful for estimating expected performance, but actual tournament results can differ quite a bit
