@@ -1,0 +1,220 @@
+---
+title: "NYC crashes and SHAP analysis"
+author: "Anastasiia Gmyrina"
+format: html
+editor: visual
+---
+
+## Introduction
+
+This analysis uses NYC motor vehicle collision data to demonstrate how SHAP can help explain a machine learning model. I use an XGBoost model to predict whether a crash resulted in an injury and then use SHAP to examine which features influenced the model's predictions.
+
+## 1. Load Libraries and Data
+
+```{r}
+#| message: false
+#| warning: false
+library(xgboost)
+library(shapviz)
+library(tidyverse)
+url <- paste0(
+  "https://data.cityofnewyork.us/resource/h9gi-nx95.csv?",
+  "$limit=10000"
+)
+
+library(xgboost)
+library(shapviz)
+library(tidyverse)
+
+crashes <- read_csv("nyc_crashes_10000.csv")
+```
+
+The dataset contains 10,000 motor vehicle collision records from NYC Open Data.
+
+## 2. Create the Injury Variable
+
+I created a binary variable called `injury`. A value of 1 means that at least one person was injured in the crash, while 0 means that no injuries were reported.
+
+```{r}
+crashes <- crashes %>%
+  mutate(
+    injury = if_else(number_of_persons_injured > 0, 1, 0)
+  )
+
+crashes %>%
+  count(injury)
+
+```
+
+## 3. Prepare Variables for the Model
+
+For this demonstration, I selected four predictors: borough, hour of the crash, vehicle type, and the primary contributing factor.
+
+```{r}
+model_data <- crashes %>%
+  transmute(
+    injury = factor(injury),
+    borough = factor(borough),
+    hour = as.integer(substr(crash_time, 1, 2)),
+    vehicle_type = factor(vehicle_type_code1),
+    contributing_factor = factor(contributing_factor_vehicle_1)
+  ) %>%
+  drop_na()
+model_data %>%
+  glimpse()
+```
+
+## 4. Split the Data
+
+I used 80% of the observations for training and 20% for testing.
+
+```{r}
+set.seed(123)
+
+split <- sample(
+  seq_len(nrow(model_data)),
+  size = 0.8 * nrow(model_data)
+)
+
+train_data <- model_data[split, ]
+test_data <- model_data[-split, ]
+```
+
+## 5. Prepare Data for XGBoost
+
+The categorical variables need to be converted into numeric dummy variables before they can be used by XGBoost.
+
+```{r}
+x_train <- model.matrix(injury ~ . - 1, data = train_data)
+x_test <- model.matrix(injury ~ . - 1, data = test_data)
+
+y_train <- as.numeric(train_data$injury) - 1
+y_test <- as.numeric(test_data$injury) - 1
+
+```
+
+## 6. Train the XGBoost Model
+
+I trained an XGBoost model using the training data and generated predictions for the test data.
+
+```{r}
+model <- xgboost(
+  x = x_train,
+  y = factor(y_train),
+  nrounds = 100
+)
+
+predictions <- predict(model, x_test)
+
+head(predictions)
+```
+
+## 7. Evaluate the Model
+
+Predicted probabilities above 0.5 were classified as injury predictions.
+
+```{r}
+results <- tibble(
+  actual = y_test,
+  predicted = if_else(predictions > 0.5, 1, 0)
+)
+
+results %>%
+  summarise(
+    accuracy = mean(actual == predicted)
+  )
+
+
+```
+
+The model achieved approximately **68% accuracy** on the test data. The purpose of this analysis is not to optimize prediction accuracy, but to demonstrate how SHAP can be used to interpret a machine learning model.
+
+## 8. Calculate SHAP Values
+
+SHAP values were calculated for the observations in the test dataset.
+
+```{r}
+shap_values <- predict(
+  model,
+  x_test,
+  type = "contrib"
+)
+
+shap_matrix <- shap_values[, -ncol(shap_values)]
+colnames(shap_matrix) <- colnames(x_test)
+
+shap <- shapviz(
+  shap_matrix,
+  X = x_test
+)
+
+```
+
+## 9. Overall Feature Importance
+
+The SHAP importance plot shows which features had the largest influence on the model's predictions overall
+
+```{r}
+sv_importance(shap)
+```
+
+In this model, **hour of the crash** was the most important feature overall. Several contributing factors, borough indicators, and vehicle types were also important.
+
+## 10. Explain One High-Risk Prediction
+
+I selected the observation with the highest predicted probability of injury.
+
+```{r}
+high_risk <- which.max(predictions)
+
+predictions[high_risk]
+
+```
+
+The SHAP waterfall plot shows how the individual features contributed to this prediction.
+
+```{r}
+sv_waterfall(
+  shap,
+  row_id = high_risk
+)
+```
+
+Finally, I checked the original test observation and its actual outcome.
+
+```{r}
+test_data %>%
+  slice(high_risk)
+
+y_test[high_risk]
+```
+
+For this observation, the model predicted a very high probability of injury, and the actual outcome was also an injury. The waterfall plot shows that **bike involvement** and **the hour of the crash** were two of the strongest positive contributors to this prediction.
+
+## Summary
+
+This example demonstrates the difference between prediction and explanation. XGBoost produced the injury prediction, while SHAP helped show which features the model relied on when making that prediction.
+
+SHAP explains **model behavior**, not causation. A high SHAP value for a feature does not mean that the feature caused the injury; it means that the feature influenced the model's prediction.
+
+## Sources
+
+NYC Open Data. *Motor Vehicle Collisions – Crashes*. This dataset contains NYPD-reported motor vehicle collisions in New York City and was the source of the crash data used in this analysis.
+
+[NYC Open Data — Motor Vehicle Collisions](https://data.cityofnewyork.us/d/h9gi-nx95?utm_source=chatgpt.com)
+
+Lundberg, S. M., & Lee, S.-I. (2017). *A Unified Approach to Interpreting Model Predictions*. This paper introduced SHAP as a method for explaining individual machine learning predictions.
+
+[SHAP paper — Lundberg & Lee (2017)](https://papers.neurips.cc/paper/7062-a-unified-approach-to-interpreting-model-predictions?utm_source=chatgpt.com)
+
+XGBoost documentation. XGBoost was used to build the classification model that predicted whether a crash resulted in an injury.
+
+[XGBoost Documentation](https://xgboost.readthedocs.io/?utm_source=chatgpt.com)
+
+The `shapviz` R package was used to visualize the SHAP values, including feature importance, dependence, and waterfall plots.
+
+[shapviz R Package](https://cran.r-project.org/package=shapviz?utm_source=chatgpt.com)
+
+### AI Assistance
+
+ChatGPT (GPT-5.6 Sol) was used to help with R implementation, troubleshooting the XGBoost and SHAP workflow, and interpreting the SHAP output.
