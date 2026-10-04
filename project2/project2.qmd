@@ -1,5 +1,5 @@
 ---
-title: "Project 2 "
+title: "Project 2 Data Tidying "
 author: "Anastasiia Gmyrina"
 editor: visual
 format:
@@ -14,8 +14,513 @@ format:
     df-print: paged
     smooth-scroll: true
     embed-resources: true
-    grid:
-      body-width: 800px
 ---
 
 ## Approach
+
+For this project, I will work with three different wide-format datasets and practice turning them into tidy data. I will start by looking at how each dataset is structured and what exactly makes it untidy. Then I will use `tidyr` and `dplyr` to reshape the data, clean up the variable names and deal with missing or inconsistent values.
+
+Since each dataset is different, the tidying process will be a little different for each one. Once the data is tidy, I will use it for the analysis proposed in the original Discussion 5A post and summarize the results with tables and visualizations.
+
+## Dataset 1 Population of the Most Populous States
+
+### Data Source
+
+For my first dataset, I used a U.S. Census Bureau table showing population estimates for the 10 most populous states. The dataset contains population values for 2020, 2021, and 2022. I created the raw CSV from the original Census table for Discussion 5A and kept the years in separate columns to preserve the original wide structure.
+
+```{r}
+#| message: false
+#| warning: false
+
+library(tidyverse)
+library(plotly)
+
+census_url <- "https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/project2/census_top10_states_2022_untidy.csv"
+
+census_raw <- read_csv(census_url)
+head(census_raw)
+```
+
+```{r}
+dim(census_raw)
+names(census_raw)
+
+```
+
+The original dataset has 10 rows and 5 columns. Each row represents one state, and the population estimates for 2020, 2021, and 2022 are stored in separate columns. The column names are also quite long, such as `April 1, 2020 (Estimates Base)`, which makes the data harder to work with.
+
+### Data Tidying
+
+The population estimates are currently stored in separate columns for each year. I will reshape the data so that the dates are stored in one column and the population estimates are stored in another. I will also rename the columns to make them shorter and more consistent.
+
+```{r}
+census_tidy <- census_raw %>%
+  rename(
+    state = `Geographic Area`,
+    `2020` = `April 1, 2020 (Estimates Base)`,
+    `2021` = `July 1, 2021`,
+    `2022` = `July 1, 2022`
+  ) %>%
+  pivot_longer(
+    cols = `2020`:`2022`,
+    names_to = "year",
+    values_to = "population"
+  ) %>%
+  select(state, year, population) %>%
+  mutate(
+    year = as.numeric(year),
+    population = as.numeric(population)
+  )
+
+head(census_tidy, 5)
+```
+
+I checked the tidy data for missing values using `summarise()` and `across()`
+
+```{r}
+census_tidy %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+```
+
+There were no missing values, so no observations needed to be removed or replaced.
+
+### Analysis
+
+Since the data is now in tidy format, I can look at how the population changed in each state from 2020 to 2022.
+
+```{r}
+population_change <- census_tidy %>%
+  group_by(state) %>%
+  summarise(
+    population_2020 = population[year == 2020],
+    population_2022 = population[year == 2022],
+    change = population_2022 - population_2020,
+    percent_change = round(
+      (population_2022 - population_2020) / population_2020 * 100,2)) %>%
+  arrange(desc(percent_change))
+
+population_change %>%
+  mutate(
+    population_2020 = scales::comma(population_2020),
+    population_2022 = scales::comma(population_2022),
+    change = scales::comma(change),
+    percent_change = paste0(percent_change, "%")
+  )
+```
+
+The results show a pretty clear difference between states that gained and lost population. Florida had the largest percentage increase at 3.28%, while Texas gained the most people overall, adding more than 884,000 residents. New York had the largest percentage decline at -2.59%, losing about 524,000 people. This is especially interesting because the period includes the COVID-19 pandemic, when population and migration patterns changed significantly across the U.S.
+
+### Visualization
+
+I first compared the overall percentage change from 2020 to 2022, and then looked at the yearly population trends to see how those changes developed over time.
+
+```{r}
+ggplot(
+  population_change,
+  aes(
+    x = percent_change,
+    y = reorder(state, percent_change),
+    fill = percent_change > 0
+  )
+) +
+  geom_col() +
+  geom_vline(xintercept = 0, color = "grey40") +
+  geom_text(
+    aes(
+      label = paste0(percent_change, "%"),
+      hjust = ifelse(percent_change > 0, -0.15, 1.15)
+    ),
+    size = 3.5
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0.15, 0.15))
+  ) +
+  scale_fill_manual(
+    values = c("TRUE" = "steelblue", "FALSE" = "coral"),
+    labels = c("TRUE" = "Increase", "FALSE" = "Decrease")
+  ) +
+  labs(
+    title = "Population Change in the 10 Most Populous States",
+    subtitle = "Percentage change from 2020 to 2022",
+    x = "Population Change (%)",
+    y = NULL,
+    fill = "Population Change"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+ggplot(census_tidy, aes(x = year, y = population)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_wrap(~ state, scales = "free_y") +
+  scale_y_continuous(labels = scales::label_number(scale = 1e-6, suffix = "M")) +
+  scale_x_continuous(breaks = c(2020, 2021, 2022)) +
+  labs(
+    title = "Population Trends in the 10 Most Populous States",
+    subtitle = "2020–2022",
+    x = NULL,
+    y = "Population"
+  ) +
+  theme_minimal()
+```
+
+The plot makes the population trends easier to see. Florida, Texas, North Carolina, and Georgia grew each year, while New York and California continued to lose population. Pennsylvania was a little different, with a small increase in 2021 followed by a larger drop in 2022.
+
+### Conclusion
+
+The data shows two different population trends from 2020 to 2022. Florida, Texas, North Carolina, and Georgia gained population, while the other six states lost population. Florida had the largest percentage increase at 3.28%, and New York had the largest percentage decline at 2.59%. Looking at all three years also shows that these changes happened differently across states rather than all at once.
+
+## Dataset 2 Business Cost and Revenue
+
+### Data Source
+
+For my second dataset, I used Jocelyn's made up business cost and revenue information for 5 individuals operating in different region across the US. The goal is to calculate the profit, plot monthly changes to see trends by region, and aggregate all costs/revenues to see national performance over 6 months.
+
+```{r}
+#| message: false
+#| warning: false
+
+business_url <- "https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/project2/5A_BusinessCostsRevenue.csv"
+
+business_raw <- read_csv(business_url)
+head(business_raw)
+```
+
+```{r}
+dim(business_raw)
+```
+
+The raw file is a data frame with 5 rows and 14 columns. Each row represents one person and location, but the monthly cost and revenue values are spread across separate columns. The naming is inconsistent (Jan Cost, Feb Cost (k), etc.), and the February cost is in thousands while January uses full dollar amounts.
+
+### Data Tidying
+
+```{r}
+names(business_raw)
+```
+
+To make the names consistent, I used `across()` to find the columns containing `(k)` and multiplied their values by 1,000. I also standardized the column names by removing `(k)`, replacing underscores with spaces, and making the capitalization consistent.
+
+```{r}
+business_tidy <- business_raw %>%
+  # Convert columns with "(k)" from thousands to full dollar amounts
+  mutate(across(contains("(k)"), ~ . * 1000)) %>%
+  # Clean and standardize the column names
+  rename_with(~ .x %>%
+      # Remove "(k)" since the values have already been converted
+      str_remove(" \\(k\\)") %>%
+      # Replace underscores with spaces
+      str_replace_all("_", " ") %>%
+      # Make capitalization consistent
+      str_to_title())
+
+head(business_tidy, 3)
+```
+
+Now i can use 'pivot_longer()' to transform the data to a long format.
+
+```{r}
+business_tidy <- business_tidy %>%
+  pivot_longer(
+    cols = !c(Location, Name),
+    names_to = c("Month", "Metric"),
+    names_sep = " ",
+    values_to = "Total"
+  )
+
+head(business_tidy)
+```
+
+Next step is to check for missing values.
+
+```{r}
+business_tidy %>%
+  summarise(across(everything(), ~ sum(is.na(.))))
+```
+
+Now i will use the statistical summary to check for outliers.
+
+```{r}
+business_tidy %>%
+  group_by(Metric) %>%
+  summarise(
+    min = min(Total),
+    median = median(Total),
+    mean = mean(Total),
+    max = max(Total)
+  )
+```
+
+Now I will identify which person and month contain the unusually high value in revenue.
+
+```{r}
+business_tidy %>%
+  arrange(desc(Total)) %>%
+  slice_head(n = 5)
+```
+
+The unusually high value belongs to Bobby in Boston, with May revenue recorded as \$6,150,000. His other monthly revenue values are much lower, so this appears to be a data-entry error. I will treat the intended value as \$61,500 and correct it before the analysis.
+
+```{r}
+business_tidy <- business_tidy %>%
+  mutate(
+    Total = if_else(Total == 6150000, 61500, Total)
+  )
+```
+
+### Analysis
+
+The first part of the analysis is to calculate monthly profit for each location.
+
+```{r}
+business_summary <- business_tidy %>%
+  group_by(Location, Month) %>%
+  summarise(
+    revenue = sum(Total[Metric == "Revenue"]),
+    cost = sum(Total[Metric == "Cost"]),
+    profit = revenue - cost,
+    .groups = "drop"
+  )
+
+business_summary %>%
+  mutate(
+    revenue = scales::comma(revenue),
+    cost = scales::comma(cost),
+    profit = scales::comma(profit)
+  )
+
+```
+
+Next I will look at how monthly profit changed at each location. This makes it easier to see which locations were more consistent and which had larger changes in profit over the six-month period.
+
+```{r}
+business_summary <- business_summary %>%
+  mutate(Month = factor(Month,levels = c("Jan", "Feb", "March", "April", "May", "June")))
+ggplot(
+  business_summary,
+  aes(x = Month, y = profit, group = Location, color = Location)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_y_continuous(labels = scales::label_dollar()) +
+  labs(
+    title = "Monthly Profit by Location",
+    x = NULL,
+    y = "Profit",
+    color = "Location"
+  ) +
+  theme_minimal()
+```
+
+Dallas, Chicago, and Boston show the largest month-to-month changes, including both strong profits and losses. New York is the most consistent, staying profitable throughout all six months, while LA ends the period with a loss in June.
+
+Finally, I will combine all five locations to see the overall monthly performance across the six-month period.
+
+```{r}
+national_summary <- business_summary %>%
+  group_by(Month) %>%
+  summarise(
+    total_revenue = sum(revenue),
+    total_cost = sum(cost),
+    total_profit = sum(profit)
+  )
+national_summary
+```
+
+```{r}
+ggplot(
+  national_summary,
+  aes(
+    x = Month,
+    y = total_profit,
+    fill = total_profit < 0
+  )
+) +
+  geom_col() +
+  geom_text(
+    aes(
+      label = scales::dollar(total_profit),
+      vjust = ifelse(total_profit >= 0, -0.5, 1.5)
+    ),
+    size = 3.5
+  ) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  scale_fill_manual(
+    values = c("FALSE" = "steelblue", "TRUE" = "coral"),
+    guide = "none"
+  ) +
+  scale_y_continuous(
+    labels = scales::label_dollar(),
+    expand = expansion(mult = c(0.1, 0.12))
+  ) +
+  labs(
+    title = "Natonal Profit by Month",
+    x = NULL,
+    y = "Total Profit"
+  ) +
+  theme_minimal()
+```
+
+The businesses were profitable in five out of six months. May was the strongest month with about \$57,000 in total profit, while April was the only month with an overall loss of about \$22,000. Profit recovered in May and stayed positive in June, although at a much lower level.
+
+### Conclusion
+
+This dataset required more cleaning because the column names, capitalization, and units were not consistent. After tidying the data, I was able to compare monthly profit by location and at the national level. Performance varied by month and location, but overall, the business was profitable in five out of six months.
+
+## Dataset 3 GDP per Capita
+
+### Data Source
+
+For my third dataset, I used GDP per capita (current US\$) data from the World Bank <https://data.worldbank.org/indicator/NY.GDP.PCAP.CD> The dataset covers countries and regions from 1960 to 2025. The original file is in wide format, with a separate column for each year, so it will need to be reshaped before the analysis.
+
+The file also contains metadata at the beginning, an empty column, and a mix of individual countries and regional groups. These issues will need to be addressed during the tidying process.
+
+```{r}
+#| message: false
+#| warning: false
+gdp_url <- "https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/project2/API_NY.GDP.PCAP.CD_DS2_en_csv_v2_429627.csv"
+
+gdp_raw <- read_csv(gdp_url, skip = 4)
+dim(gdp_raw)
+head(gdp_raw, 3)
+```
+
+The dataset has 265 rows in 71 columns with a separate column for each year. There is also an extra empty column called `...71.`
+
+### Data Tidying
+
+First, I will check if column `...71`is actually empty.
+
+```{r}
+gdp_raw %>%
+  select(`...71`) %>%
+  distinct()
+```
+
+Since that column contains only NA values, I removed it before reshaping data. I also renamed the variables using shorter names. I also converted `year` to numeric so it can be used more easily in the analysis.
+
+```{r}
+gdp_tidy <- gdp_raw %>%
+  select(-`...71`) %>%
+  pivot_longer(
+    cols = c(starts_with("19"), starts_with("20")),
+    names_to = "year",
+    values_to = "gdp"
+  ) %>%
+  rename(
+    country = `Country Name`,
+    country_code = `Country Code`,
+    indicator = `Indicator Name`,
+    indicator_code = `Indicator Code`
+  ) %>%
+  mutate(year = as.numeric(year))
+
+head(gdp_tidy, 3)
+
+```
+
+Next step is to check for missing values in GDP column.
+
+```{r}
+gdp_tidy %>%
+  summarise(
+    missing_gdp = sum(is.na(gdp))
+  )
+```
+
+There are 2,745 missing GDP values in the dataset. Since GDP data is not available for every country in every year, I will keep these missing values during the tidying process and remove them only when needed for a specific analysis.
+
+### Analysis
+
+I decided to focus on a specific group of countries that I can identify directly: the 15 former Soviet republics. I will compare how their GDP per capita has changed since the early 1990s.
+
+```{r}
+former_ussr <- gdp_tidy %>%
+  filter(
+    country %in% c(
+      "Armenia","Azerbaijan", "Belarus", "Estonia","Georgia","Kazakhstan",    "Kyrgyz Republic","Latvia", "Lithuania", "Moldova", "Russian Federation",
+      "Tajikistan", "Turkmenistan","Ukraine", "Uzbekistan"),
+    year >= 1991)
+
+```
+
+Before comparing the countries, I checked the first and last year with available GDP data for each one.
+
+```{r}
+former_ussr %>%
+  filter(!is.na(gdp)) %>%
+  group_by(country) %>%
+  summarise(
+    first_year = min(year),
+    last_year = max(year)
+  )
+```
+
+Most countries have GDP per capita data beginning in 1991, but Estonia starts in 1993 and Latvia and Lithuania in 1995. To make the comparison consistent across all 15 countries, I will use 1995 as the starting year.
+
+```{r}
+gdp_change <- former_ussr %>%
+  filter(year %in% c(1995, 2025)) %>%
+  select(country, year, gdp) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = gdp,
+    names_prefix = "gdp_"
+  ) %>%
+  mutate(
+    change = gdp_2025 - gdp_1995,
+    percent_change = (change / gdp_1995) * 100
+  ) %>%
+  arrange(desc(percent_change))
+
+gdp_change %>%
+  mutate(
+    gdp_1995 = scales::dollar(gdp_1995, accuracy = 1),
+    gdp_2025 = scales::dollar(gdp_2025, accuracy = 1),
+    change = scales::dollar(change, accuracy = 1),
+    percent_change = paste0(round(percent_change, 1), "%")
+  )
+```
+
+GDP per capita increased substantially across the former Soviet countries between 1995 and 2025, although the size of the increase varied a lot. Azerbaijan had the largest percentage increase, from about \$315 per person in 1995 to \$7,411 in 2025, an increase of more than 2,200%. Armenia and Georgia also had increases of more than 1,500%.
+
+### Visualisation
+
+To look at how GDP per capita changed over time, I created an interactive map of the 15 former Soviet countries. The map can be played over time or viewed year by year using the slider.
+
+```{r}
+map_data <- former_ussr %>%
+  filter(year >= 1995, !is.na(gdp))
+
+map <- plot_ly(
+  data = map_data,
+  type = "choropleth",
+  locations = ~country,
+  locationmode = "country names",
+  z = ~gdp,
+  frame = ~year,
+  text = ~country,
+  hovertemplate = "<b>%{text}</b><br>GDP per capita: $%{z:,.0f}<extra></extra>"
+)
+
+map %>%
+  layout(
+    title = "GDP per Capita in Former Soviet Countries, 1995–2025",
+    geo = list(
+      scope = "world",
+      lonaxis = list(range = c(15, 180)),
+      lataxis = list(range = c(30, 75))
+    )
+  )
+```
+
+The map makes the differences between the countries easier to see over time. The Baltic countries, especially Lithuania, move toward much higher GDP per capita levels, while several other former Soviet countries remain at lower levels.
+
+### Conclusion
+
+GDP per capita increased substantially across the former Soviet countries from 1995 to 2025, but the size of the increase varied a lot. The interactive map also shows how the differences between countries developed over time, with the Baltic countries reaching some of the highest GDP per capita levels by 2025.
