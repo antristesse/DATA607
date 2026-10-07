@@ -1,0 +1,23 @@
+---
+title: "Assignment 7"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this assignment, I selected three books about Python and manually created the same dataset in both HTML and JSON formats. The data includes the title, authors, publication year, and ISBN for each book.
+
+The HTML and JSON files will be loaded separately into R and converted into data frames. After loading the data, I will compare the two data frames to determine whether they are identical. This may require checking the structure and data types since the two file formats can read the same information differently.

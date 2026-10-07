@@ -1,0 +1,20 @@
+[
+  {
+    "Title": "Python Crash Course: A Hands-on, Project-based Introduction to Programming",
+    "Authors": "Eric Matthes",
+    "Year": 2023,
+    "ISBN": "9781718502703"
+  },
+  {
+    "Title": "Introduction to Machine Learning with Python: A Guide for Data Scientists",
+    "Authors": "Andreas C. Müller, Sarah Guido",
+    "Year": 2016,
+    "ISBN": "9781449369897"
+  },
+  {
+    "Title": "Python for Data Analysis: Data Wrangling with pandas, NumPy, and Jupyter",
+    "Authors": "Wes McKinney",
+    "Year": 2022,
+    "ISBN": "9781098104030"
+  }
+]
