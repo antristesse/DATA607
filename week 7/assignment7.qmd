@@ -21,3 +21,64 @@ format:
 For this assignment, I selected three books about Python and manually created the same dataset in both HTML and JSON formats. The data includes the title, authors, publication year, and ISBN for each book.
 
 The HTML and JSON files will be loaded separately into R and converted into data frames. After loading the data, I will compare the two data frames to determine whether they are identical. This may require checking the structure and data types since the two file formats can read the same information differently.
+
+## Load data
+
+The same book information was manually created in two formats HTML and JSON, and I will load each one separately into R.
+
+### Loading HTML
+
+```{r}
+#| message: false
+library(rvest)
+library(dplyr)
+
+html_data <- read_html("https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/week%207/books.html") 
+all_tables <- html_data %>%
+  html_table(fill = TRUE)
+
+html_books <- all_tables[[1]]
+html_books
+
+```
+
+### Loading JSON
+
+```{r}
+library(jsonlite)
+json_books <- fromJSON("https://raw.githubusercontent.com/antristesse/DATA607/refs/heads/main/week%207/books.json")
+json_books
+
+```
+
+## Compare Data
+
+After loading the HTML and JSON files into separate data frames, I compared them using `identical()`. I also used `str()` to check the structure and data types of each data frame in case they were not identical.
+
+```{r}
+identical(html_books, json_books)
+str(html_books)
+str(json_books)
+```
+
+The comparison returned FALSE. The values are the same, but the data types are slightly different. The HTML file reads ISBN as numeric, while the JSON file reads ISBN as character. The HTML data is also stored as a tibble, while the JSON data is a regular data frame.
+
+Since ISBN is an identifier rather than a value used for calculations, I converted the ISBN column in the HTML data from numeric to character, and also converted it to regular data frame.
+
+```{r}
+html_books <- html_books %>%
+  mutate(ISBN = as.character(ISBN)) %>%
+  as.data.frame()
+```
+
+Now we can check if both data frames are identical
+
+```{r}
+identical(html_books, json_books)
+```
+
+After making the data types and structures consistent, the comparison returned TRUE. This confirms that the HTML and JSON files contain the same book information.
+
+## Summary
+
+In this assignment, I created the same book dataset in HTML and JSON formats and loaded both files into R. Although the data contained the same information, R initially read the ISBN and data frame structures differently. After making these consistent, the two data frames were identical. This exercise showed how the same data can be stored and read differently depending on the file format.
