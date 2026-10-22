@@ -31,3 +31,108 @@ I will use the following endpoint:
 The request uses `current` to retrieve the latest available list and `hardcover-fiction` to specify the book category. Authentication requires an API key.
 
 Source: <https://developer.nytimes.com/docs/books-product/1/overview>
+
+## APY Request
+
+```{r}
+#| message: false
+#| warning: false
+library(httr2)
+library(jsonlite)
+library(tidyverse)
+
+# Retrieve the API key from the environment
+api_key <- Sys.getenv("NYT_API_KEY")
+
+# Define the NYT Books API endpoint
+url <- "https://api.nytimes.com/svc/books/v3/lists/current/hardcover-fiction.json"
+
+# Create and send the API request
+response <- request(url) %>%
+  req_url_query(`api-key` = api_key) %>%
+  req_perform()
+
+# Check the response status
+resp_status(response)
+```
+
+The API request was successful and returned an HTTP status code of 200. This confirms that R was able to connect to the New York Times Books API using my API key and retrieve the requested bestseller data.
+
+## Parsing the JSON Response
+
+I used `resp_body_json()` from the `httr2` package to convert the response into an R object. I then used `names()` to examine the main elements of the response. The `results` element contains the bestseller information that I will extract and organize into a tidy data frame in the next step.
+
+```{r}
+# convert the JSON response into an R object
+books_json <- resp_body_json(response)
+
+# display the main sections of the JSON response
+names(books_json)
+```
+
+Next I will extract book information. To make the data easier to analyze, I will extract four variables: title, author, rank, and weeks on the bestseller list. I will use `map_dfr()` from the `purrr` package to go through each book and combine the selected information into a single data frame.
+
+```{r}
+# Extract the book records from the JSON response
+books <- purrr::pluck(books_json, "results", "books")
+# Extract the information we need from each book
+books_df <- purrr::map_dfr(books, ~ tibble::tibble(
+  title = purrr::pluck(.x, "title"),
+  author = purrr::pluck(.x, "author"),
+  rank = purrr::pluck(.x, "rank"),
+  weeks_on_list = purrr::pluck(.x, "weeks_on_list")
+))
+books_df
+```
+
+After converting the JSON response into a tibble, I will check whether any of the selected variables contain missing values.
+
+```{r}
+# Count missing values in each column
+books_df %>% summarise(across(everything(), ~ sum(is.na(.x))))
+```
+
+The original JSON response contained nested information about each book. I extracted the title, author, rank, and weeks on the bestseller list and organized them into a tidy data frame with 15 rows and 4 columns. I also checked for missing values and found none, so no rows needed to be removed. The resulting dataset is ready for analysis.
+
+## Research Question
+
+To investigate whether books that have spent more weeks on the bestseller list tend to have better rankings, I first sorted the books by `weeks_on_list` in descending order.
+
+This allowed me to compare the longest-running bestsellers with their current positions. Since rank 1 represents the highest position, lower rank numbers indicate better rankings.
+
+```{r}
+books_df %>%
+  arrange(desc(weeks_on_list))
+```
+
+Sorting the books provides an initial overview, but it does not tell us how strongly the two variables are related. To investigate this further, I will calculate Spearman's correlation coefficient between current rank and weeks on the bestseller list. Since rank 1 is the highest position, a negative correlation would indicate that books with more weeks on the list tend to have better rankings.
+
+```{r}
+# Calculate the relationship between rank and weeks on the list
+books_df %>%
+  summarise(
+    correlation = cor(
+      rank,
+      weeks_on_list,
+      method = "spearman"
+    )
+  )
+```
+
+The Spearman correlation coefficient was approximately 0.054, indicating almost no relationship between the number of weeks a book has spent on the bestseller list and its current ranking. Although the correlation is slightly positive, it is very close to zero. This suggests that books that have remained on the list longer do not necessarily have better or worse rankings.
+
+However, this analysis includes only 15 books from the current Hardcover Fiction list, so the results cannot be generalized to all bestselling books.
+
+## Conclusion
+
+In this project, I used the New York Times Books API to retrieve the current Hardcover Fiction bestseller list and convert the JSON response into a tidy data frame.
+
+The dataset contained 15 books, and no missing values were found in the selected variables. I then explored the relationship between the number of weeks each book had spent on the list and its current ranking.
+
+The Spearman correlation was approximately 0.054, suggesting almost no relationship between these variables in the current list. However, the analysis was limited to 15 books, so the findings cannot be generalized to all NYT bestsellers.
+
+## References
+
+New York Times Developer Network. *Books API Documentation*.
+
+<https://developer.nytimes.com/docs/books-product/1/overview>
