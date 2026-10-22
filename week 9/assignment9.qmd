@@ -1,0 +1,33 @@
+---
+title: "Assignment 9 NY Times API"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this assignment I will use the New York Times Books API to explore whether books that have spent more weeks on the bestseller list tend to have higher rankings. I will focus on the current Hardcover Fiction Best Sellers list and use R to retrieve data from the API, parse the JSON response, and organize the results into a tidy data frame.
+
+## API Description
+
+The New York Times Books API provides information about bestseller lists, including book titles, authors, rankings, and the number of weeks each book has appeared on a list.
+
+I will use the following endpoint:
+
+`https://api.nytimes.com/svc/books/v3/lists/current/hardcover-fiction.json`
+
+The request uses `current` to retrieve the latest available list and `hardcover-fiction` to specify the book category. Authentication requires an API key.
+
+Source: <https://developer.nytimes.com/docs/books-product/1/overview>
