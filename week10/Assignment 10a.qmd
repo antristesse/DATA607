@@ -1,0 +1,21 @@
+---
+title: "Assignment 10a"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this assignment, I will reproduce the sentiment analysis in Chapter 2 of *Text Mining with R* using Jane Austen's novels. Then I will extend the analysis to restaurant reviews and compare the sentiment in written reviews with customer star ratings. I will also test an additional sentiment lexicon.
