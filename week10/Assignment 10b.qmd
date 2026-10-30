@@ -1,0 +1,33 @@
+---
+title: "Assignment 10b"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this assignment, I will use the Nobel Prize API to explore patterns among Nobel Prize winners. I will retrieve the data in JSON format and use R to clean, transform, and analyze it.
+
+I will focus on four questions:
+
+1.  **Is there an ideal age to win a Nobel Prize?** I will compare the age distribution of laureates across different prize categories.
+
+2.  **Do certain Nobel categories have more exceptionally young winners?** I will calculate the percentage of laureates who received their awards before age 40.
+
+3.  **Has women's representation among Nobel laureates increased over time?** I will examine how the percentage of female winners has changed across decades.
+
+4.  **Which countries produce Nobel laureates, and how has that changed over time?** I will compare birth countries across decades to identify geographic trends.
+
+I will use `httr2` to retrieve the JSON data and `tidyverse` to organize it into separate laureate and prize data frames. I will then join these datasets using laureate IDs and calculate additional variables such as age at the time of the award and award decade.
