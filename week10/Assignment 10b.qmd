@@ -31,3 +31,222 @@ I will focus on four questions:
 4.  **Which countries produce Nobel laureates, and how has that changed over time?** I will compare birth countries across decades to identify geographic trends.
 
 I will use `httr2` to retrieve the JSON data and `tidyverse` to organize it into separate laureate and prize data frames. I will then join these datasets using laureate IDs and calculate additional variables such as age at the time of the award and award decade.
+
+## API Request
+
+```{r}
+#| message: false
+#| warning: false
+library(httr2)
+library(jsonlite)
+library(tidyverse)
+
+url <- "https://api.nobelprize.org/2.1/laureates"
+
+response <- request(url) %>%
+  req_url_query(limit = 2000) %>%
+  req_perform()
+
+nobel_json <- resp_body_json(response)
+
+laureates_raw <- tibble(laureate = nobel_json$laureates)
+
+```
+
+## Data Preparation
+
+I used `map_chr()` and `pluck()` to extract relevant information from the nested JSON data, including laureate IDs, names, gender, and birth details. I also kept the Nobel Prize information for further analysis. This created a tidy data frame with one row per laureate.
+
+```{r}
+laureates <- laureates_raw %>%
+  mutate(
+    laureate_id = map_chr(laureate, "id"),
+    name = map_chr(laureate, ~ pluck(.x, "fullName", "en",
+                                     .default = NA_character_)),
+    gender = map_chr(laureate, ~ pluck(.x, "gender",
+                                       .default = NA_character_)),
+    birth_date = map_chr(laureate, ~ pluck(.x, "birth", "date",
+                                           .default = NA_character_)),
+    birth_country = map_chr(laureate, ~ pluck(.x, "birth", "place",
+                                              "countryNow", "en",
+                                              .default = NA_character_)),
+    nobel_prizes = map(laureate, "nobelPrizes")
+  ) %>%
+  select(-laureate)
+
+glimpse(laureates)
+```
+
+Next, I expanded the nested Nobel Prize information to create one row per award. I extracted the award year and category, then calculated each laureate's approximate age at the time of winning and the award decade. The resulting tidy data frame contains all the variables needed to answer my four research questions.
+
+```{r}
+nobel_data <- laureates %>%
+  unnest_longer(nobel_prizes) %>%
+  mutate(
+    award_year = map_chr(nobel_prizes, "awardYear"),
+    category = map_chr(nobel_prizes, ~ pluck(.x, "category", "en"))
+  ) %>%
+  select(-nobel_prizes) %>%
+  mutate(
+    birth_date = as.Date(birth_date),
+    award_year = as.integer(award_year),
+    age_at_award = award_year - lubridate::year(birth_date),
+    decade = (award_year %/% 10) * 10
+  )
+
+names(nobel_data)
+```
+
+## Q1 Is There Ideal Age to Win Nobel Prize?
+
+```{r}
+nobel_data %>%
+  filter(!is.na(age_at_award), gender %in% c("male", "female")) %>%
+  ggplot(aes(x = category, y = age_at_award, fill = category)) +
+  geom_boxplot(alpha = 0.8, show.legend = FALSE) +
+  coord_flip() +
+  labs(
+    title = "Age of Nobel Laureates by Prize Category",
+    x = "Nobel Prize Category",
+    y = "Age at Award"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+nobel_data %>%
+  filter(!is.na(age_at_award), gender %in% c("male", "female")) %>%
+  arrange(age_at_award) %>%
+  select(name, category, award_year, age_at_award) %>%
+  slice_head(n = 5)
+```
+
+The boxplot shows that most Nobel laureates receive their awards between ages 50 and 70, although this varies by category. Physics has one of the lowest median ages, while Literature and Economic Sciences have the highest.
+
+The youngest Nobel Prize winner was **Malala Yousafzai**, who received the Nobel Peace Prize in 2014 at just 17 years old for her advocacy of girls' education in Pakistan.
+
+Overall, there doesn't appear to be one ideal age to win a Nobel Prize, but some categories tend to recognize achievements earlier than others.
+
+## Q2 Which Nobel Prize Categories Have the Most Winners Under 40?
+
+To explore age differences further, I calculated the percentage of Nobel laureates who received their awards before age 40 in each category. I used percentages rather than counts to make the categories easier to compare.
+
+```{r}
+young_winners <- nobel_data %>%
+  filter(!is.na(age_at_award), gender %in% c("male", "female")) %>%
+  group_by(category) %>%
+  summarise(
+    total_winners = n(),
+    under_40 = sum(age_at_award < 40),
+    percentage = 100 * under_40 / total_winners
+  ) %>%
+  arrange(desc(percentage))
+
+young_winners
+```
+
+```{r}
+young_winners %>%
+  ggplot(aes(x = percentage, y = reorder(category, percentage))) +
+  geom_segment(
+    aes(x = 0, xend = percentage, yend = category),
+    color = "gray70",
+    linewidth = 1
+  ) +
+  geom_point(color = "#008B8B", size = 4) +
+  labs(
+    title = "Nobel Laureates Under 40 by Prize Category",
+    x = "Winners Under 40 (%)",
+    y = "Prize Category"
+  ) +
+  theme_minimal()
+```
+
+Physics has the highest percentage of Nobel laureates who received their awards before age 40, at approximately 10.6%, followed by the Peace Prize at 7.2%. Medicine and Chemistry have lower percentages, while Literature and Economic Sciences have no winners under 40.
+
+This suggests that younger laureates are more common in Physics, while recognition in Literature and Economic Sciences typically comes later in life.
+
+## Q3 Has Women's Representation Among Nobel Laureates Increased Over Time?
+
+I calculated the percentage of awards received by women in each decade and used a line chart to visualize the trend.
+
+```{r}
+female_trends <- nobel_data %>%
+  filter(gender %in% c("male", "female")) %>%
+  group_by(decade) %>%
+  summarise(
+    total_winners = n(),
+    female_winners = sum(gender == "female"),
+    female_percentage = 100 * female_winners / total_winners
+  )
+
+female_trends
+```
+
+```{r}
+female_trends %>%
+  ggplot(aes(x = decade, y = female_percentage)) +
+  geom_line(color = "#9B59B6", linewidth = 1.2) +
+  geom_point(color = "#9B59B6", size = 3) +
+  scale_y_continuous(labels = scales::label_percent(scale = 1)) +
+  labs(
+    title = "Female Nobel Laureates Over Time",
+    subtitle = "Percentage of individual laureate awards by decade",
+    x = "Decade",
+    y = "Female Laureates (%)"
+  ) +
+  theme_minimal()
+```
+
+Women's representation among Nobel laureates has increased significantly over time. In the early decades, women received fewer than 8% of individual laureate awards, with no female winners in the 1950s. Since the 1980s, the percentage has increased steadily, reaching almost 20% in the 2020s.
+
+## Q4 Which Countries Produce Nobel Laureates, and How Has That Changed Over Time?
+
+```{r}
+top_countries <- nobel_data %>%
+  filter(!is.na(birth_country)) %>%
+  count(birth_country, sort = TRUE) %>%
+  slice_head(n = 10) %>%
+  pull(birth_country)
+
+country_trends <- nobel_data %>%
+  filter(birth_country %in% top_countries) %>%
+  count(birth_country, decade) %>%
+  complete(
+    birth_country,
+    decade = seq(1900, 2020, by = 10),
+    fill = list(n = 0)
+  )
+```
+
+```{r}
+country_trends %>%
+  ggplot(aes(x = decade, y = reorder(birth_country, n, sum), fill = n)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(
+    low = "#E0F3F8",
+    high = "#0868AC"
+  ) +
+  labs(
+    title = "Nobel Laureates by Birth Country and Decade",
+    subtitle = "Top 10 birth countries",
+    x = "Decade",
+    y = "Birth Country",
+    fill = "Awards"
+  ) +
+  theme_minimal()
+```
+
+The heatmap shows that the United States has consistently produced a large number of Nobel laureates, with particularly high numbers in the 2000s. European countries such as the United Kingdom, Germany, and France also appear frequently throughout the decades.
+
+## Conclusion
+
+This analysis explored Nobel Prize winners using JSON data from the Nobel Prize API. The results showed that most laureates receive their awards later in life, although younger winners are more common in Physics and the Peace Prize. Women's representation has increased over time, reaching nearly 20% in the 2020s.
+
+The geographic analysis showed that the United States and several European countries account for a large share of Nobel laureates, while countries such as Japan have become more prominent in recent decades.
+
+## References
+
+1.  Nobel Prize Outreach. (n.d.). *Nobel Prize API*. <https://api.nobelprize.org/2.1/laureates>
+
+2.  Nobel Prize Outreach. (n.d.). *Nobel Prize Developer Zone*. <https://www.nobelprize.org/about/developer-zone-2/>
