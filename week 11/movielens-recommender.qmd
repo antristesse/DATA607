@@ -1,0 +1,70 @@
+---
+title: "MovieLens Recommender System Analysis"
+author: "Anastasiia Gmyrina"
+date: "2026-11-07"
+format:
+  html:
+    toc: true
+    embed-resources: true
+---
+
+## Introduction
+
+I analyzed **MovieLens** (movielens.org), a movie recommendation website run by the GroupLens research lab at the University of Minnesota. I created a new account, rated movies, and watched how the recommendations changed. This report has three parts: Scenario Design, reverse engineering, and recommendations for improvement.
+
+## 1. Scenario Design
+
+Scenario Design asks three questions: who are the target users, what are their goals, and how can the site help them reach those goals. I did it twice, because the organization and its users want different things.
+
+### The organization (GroupLens)
+
+1. **Target users:** the researchers who run the site and the research community that uses MovieLens data.
+2. **Goals:** collect many ratings, test recommendation methods on real people, and publish research.
+3. **How the site helps:** it asks users to rate movies, offers several recommenders so they can be compared, and collects feedback such as ratings, tags and wish lists.
+
+### The users
+
+1. **Target users:** movie fans, from casual viewers to people who track every movie they watch.
+2. **Goals:** find movies worth watching, keep track of movies they have seen, and get good suggestions without much effort.
+3. **How the site helps:** it gives personalized suggestions, lets users rate and save movies, and lets them choose how recommendations are made.
+
+
+## 2. Reverse Engineering
+
+I rated 21 movies in stages and recorded what the site showed.
+
+| Ratings | What I saw |
+|---|---|
+| 0 | A welcome screen asking me to split 3 points among six groups of movies, then a "top picks" page |
+| 5 | "Top picks" did not change |
+| 10 | "Top picks" did not change |
+| 15 | The site said personalized recommendations were now available |
+| 21 | I checked the stats page and the recommender settings |
+
+**What I found**
+
+- **Cold start.** At sign-up, the site gave me a point budget of 3 to distribute among six groups of movies. Each group was described by feel (for example, "classic, masterpiece, quotable" or "blood, dark humor, social commentary") and illustrated with three well-known examples. My "top picks" page did not change at 5 or 10 ratings, and the site said personalization was available once I reached 15. I infer that the system uses a minimum number of ratings before switching to a ratings-based recommender.
+- **The algorithm is stated on the site.** The recommender settings say the main recommender uses **item-item collaborative filtering**, which means it finds movies that are rated similarly by many users and recommends movies like the ones you rated highly. The site also says it is built with **LensKit**, GroupLens' open-source toolkit. This is the same idea described in the Amazon paper for this assignment (Linden, Smith and York, 2003).
+- **Users can pick the recommender.** There are four options: "peasant" (not personalized), "bard" (uses the starting point choices), "warrior" (uses ratings, the one I was on), and "wizard" (also ratings-based, but it was greyed out).
+- **The lists were different.** When I switched recommenders with the same ratings, the lists changed a lot. The warrior list matched my taste best. The other two looked more like general popular lists.
+- **Stats page.** The site shows charts of my ratings, genres and release years. All the movies I rated turned out to be very popular ones, so I could not test how the site handles rare movies.
+
+
+## 3. Recommendations for Improvement
+
+1. **Show progress toward personalization.** For example, "9 of 15 ratings until your personalized picks." In my test nothing changed for the first 15 ratings, so it was not clear the effort was working.
+2. **Say which recommender is active.** I only found out by opening the settings. A short label on the page would help.
+3. **Use clearer names and explanations.** "Peasant," "bard," "warrior" and "wizard" do not tell users how they differ, and the greyed-out wizard had no explanation.
+4. **Explain each suggestion.** For example, "Because you rated similar movies highly."
+5. **Help users with mixed taste and less popular movies.** My lists were mostly well-known movies. An option to include lesser-known movies would help users discover more.
+
+## Conclusion
+
+MovieLens uses a well-known method, item-item collaborative filtering, and is unusually open about it. Its main weakness in my test was the early experience: new users must rate many movies before seeing personalized results and get little feedback on the way. Better progress messages, clearer recommender names and explanations would improve it.
+
+## References
+
+- Temkin, B. D. (2004). *Scenario Design: A Disciplined Approach to Customer Experience.* Forrester Research.
+- Linden, G., Smith, B., & York, J. (2003). Amazon.com Recommendations: Item-to-Item Collaborative Filtering. *IEEE Internet Computing*.
+- MovieLens, GroupLens Research. <https://movielens.org>
+- LensKit. <https://lenskit.org>
