@@ -1,0 +1,27 @@
+---
+title: "Project 4"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this project, I will explore how machine learning can be used to classify emails as spam or ham. I will use the Apache SpamAssassin Public Corpus, focusing on two categories: `spam_2`, which contains spam messages, and `hard_ham`, which contains legitimate emails that may resemble spam.
+
+My goal is to compare two classification methods, Naive Bayes and Logistic Regression, to see how accurately they can distinguish between the two categories. I will first extract and clean the email text, then divide the data into training and testing sets. After training both models, I will compare their performance using accuracy, precision, recall, and F1 score. I will also examine false positives, since incorrectly identifying a legitimate email as spam can be particularly problematic.
+
+One challenge I expect is that the emails are stored as individual text files with headers, message bodies, and different formatting. Another is that the dataset contains more spam emails than ham emails, which may affect the models' predictions.
+
+## 
