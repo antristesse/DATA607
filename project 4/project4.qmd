@@ -1,0 +1,449 @@
+---
+title: "Project 4"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+## Approach
+
+For this project, I will explore how machine learning can be used to classify emails as spam or ham. I will use the Apache SpamAssassin Public Corpus, focusing on two categories: `spam_2`, which contains spam messages, and `hard_ham`, which contains legitimate emails that may resemble spam.
+
+My goal is to compare two classification methods, Naive Bayes and Logistic Regression, to see how accurately they can distinguish between the two categories. I will first extract and clean the email text, then divide the data into training and testing sets. After training both models, I will compare their performance using accuracy, precision, recall, and F1 score. I will also examine false positives, since incorrectly identifying a legitimate email as spam can be particularly problematic.
+
+One challenge I expect is that the emails are stored as individual text files with headers, message bodies, and different formatting. Another is that the dataset contains more spam emails than ham emails, which may affect the models' predictions.
+
+## Data preparation
+
+### Data loading
+
+```{r}
+#| message: false
+library(tidyverse)
+# Extract email datasets if folders are missing
+if (!dir.exists("easy_ham_2") || !dir.exists("spam_2")) {
+  untar("spamassassin_data.tar.gz", exdir = ".")
+}
+# List email files and exclude 'cmds', which contains renaming instructions
+ham_files <- list.files("easy_ham_2", full.names = TRUE) %>%
+  discard(~ basename(.x) == "cmds")
+spam_files <- list.files("spam_2", full.names = TRUE) %>%
+  discard(~ basename(.x) == "cmds")
+
+length(ham_files)
+length(spam_files)
+```
+
+The dataset contains 1,400 ham emails and 1,396 spam emails, for a total of 2,796 messages. The two categories are almost equally represented, which makes the dataset more balanced for training and evaluating classification models.
+
+### Check email structure
+
+Before processing the entire dataset, I will examine one email to understand its structure. Each file contains headers, including sender and recipient information, followed by the actual message body.
+
+```{r}
+email <- readLines(ham_files[1], warn = FALSE)
+
+head(email, 20)
+```
+
+I want to classify emails based on their content, so I will separate the message body from the technical headers. An empty line marks where the body begins. After extracting it, I will combine the individual lines into one text string to make further processing easier.
+
+```{r}
+which(email == "")[1]
+
+email_body <- email[26:length(email)]
+
+head(email_body, 15)
+
+email_text <- str_c(email_body, collapse = " ")
+
+email_text
+```
+
+To process all emails, I will create a function that automatically finds where the message body starts and combines its lines into one text string. This will allow me to extract the text consistently, even when emails have different header lengths.
+
+```{r}
+read_email <- function(file) {
+  email <- readLines(file, warn = FALSE)
+  
+  body_start <- which(email == "")[1]
+  
+  email_body <- email[(body_start + 1):length(email)]
+  
+  str_c(email_body, collapse = " ")
+}
+```
+
+### Create email dataset
+
+Next I will apply the function to all spam and ham emails and combine the results into one data frame. Each row will represent one email, with its text and a label identifying whether it is spam or ham.
+
+```{r}
+# Extract text from all emails
+ham_text <- map_chr(ham_files, read_email)
+spam_text <- map_chr(spam_files, read_email)
+
+# Combine emails into one dataset
+emails <- tibble(
+  text = c(ham_text, spam_text),
+  label = c(
+    rep("ham", length(ham_text)),
+    rep("spam", length(spam_text))
+  )
+)
+
+glimpse(emails)
+```
+
+Before training the models, I will clean the email text by converting it to lowercase, removing URLs and punctuation, and replacing extra spaces. This will help make the text more consistent for classification.
+
+```{r}
+emails <- emails %>%
+  mutate(
+    text = str_remove_all(text, "<[^>]+>"),
+    text = str_to_lower(text),
+    text = str_remove_all(text, "https?://\\S+|www\\.\\S+"),
+    text = str_replace_all(text, "[[:punct:]]", " "),
+    text = str_squish(text)
+  )
+emails %>%
+  select(text, label) %>%
+  slice_head(n = 3)
+```
+
+### Tokenizing emails
+
+I will split each email into individual words using tokenization. I will also assign an ID to each email so I can connect the words back to their original messages when building the classification models.
+
+```{r}
+library(tidytext)
+
+email_words <- emails %>%
+  mutate(email_id = row_number()) %>%
+  unnest_tokens(word, text)
+
+head(email_words, 10)
+```
+
+## Explore Word Frequencies
+
+After tokenizing the emails, I will examine the most frequently used words in each category. This will help me identify common patterns and explore whether spam and ham emails use different vocabulary.
+
+```{r}
+email_words %>%
+  count(label, word, sort = TRUE) %>%
+  group_by(label) %>%
+  slice_max(n, n = 10) %>%
+  arrange(label, desc(n))
+```
+
+The most frequent words are common English words that don't provide much information about whether an email is spam or ham. I will remove these stop words and numbers to focus on more meaningful vocabulary.
+
+```{r}
+email_words <- email_words %>%
+  anti_join(stop_words, by = "word") %>%
+  filter(!str_detect(word, "^[0-9]+$"))
+email_words %>%
+  count(label, word, sort = TRUE) %>%
+  group_by(label) %>%
+  slice_max(n, n = 10) %>%
+  arrange(label, desc(n))
+```
+
+### Visualize Word Frequencies
+
+I will visualize the 10 most frequent words in each category to compare the vocabulary used in spam and ham emails.
+
+```{r}
+email_words %>%
+  count(label, word) %>%
+  group_by(label) %>%
+  slice_max(n, n = 10) %>%
+  ggplot(aes(x = reorder(word, n), y = n, fill = label)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~label, scales = "free_y") +
+  labs(
+    title = "Most Frequent Words in Spam and Ham Emails",
+    x = "Word",
+    y = "Frequency"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+Ham emails frequently contain technology-related terms such as "linux" and "users", while spam emails include words like "free", "business", and "click". Some formatting artifacts remain, but the results already show differences in vocabulary between the two categories.
+
+## Create a Document-Term Matrix
+
+To prepare the text for classification, I will convert the words into a document-term matrix. This will show how frequently each word appears in each email, allowing the models to work with numerical data instead of raw text.
+
+```{r}
+dtm <- email_words %>%
+  count(email_id, word) %>%
+  cast_dtm(email_id, word, n)
+
+dtm
+
+```
+
+Now i will match emails with matrix
+
+```{r}
+emails_model <- emails %>%
+  mutate(email_id = row_number()) %>%
+  filter(email_id %in% email_words$email_id)
+
+nrow(emails_model)
+```
+
+Before training the models, I will verify that the emails and document-term matrix are in the same order. This is important to ensure that each email is matched with the correct spam or ham label.
+
+```{r}
+identical(
+  as.character(emails_model$email_id),
+  rownames(as.matrix(dtm))
+)
+```
+
+## Classification models
+
+### Split data into training and testing sets
+
+I will divide the emails into 80% training data and 20% testing data. I'll use stratified sampling to keep similar proportions of spam and ham in both groups. The training set will be used to build the models, while the testing set will evaluate how well they classify new emails.
+
+```{r}
+library(rsample)
+
+set.seed(123)
+
+split <- initial_split(emails_model, prop = 0.8, strata = label)
+
+train <- training(split)
+test <- testing(split)
+
+table(train$label)
+table(test$label)
+```
+
+To avoid using information from the testing data during training, I will build the vocabulary using only the training emails. Both models will then use the same vocabulary for a fair comparison.
+
+```{r}
+train_words <- email_words %>%
+  filter(email_id %in% train$email_id)
+
+train_vocab <- train_words %>%
+  distinct(word)
+
+nrow(train_vocab)
+```
+
+Some words appear in only a few emails and may not be useful for classification. I will keep words that appear in at least five training emails to reduce the number of features.
+
+```{r}
+train_vocab <- train_words %>%
+  distinct(email_id, word) %>%
+  count(word, name = "n_emails") %>%
+  filter(n_emails >= 5)
+
+nrow(train_vocab)
+```
+
+Next, I will convert the training and testing emails into document-term matrices using the vocabulary selected from the training data. Each row represents an email, and each column represents a word. The values show how many times each word appears in an email.
+
+```{r}
+#| message: false
+library(Matrix)
+
+# Keep only words from the training vocabulary
+model_words <- email_words %>%
+  semi_join(train_vocab, by = "word") %>%
+  count(email_id, word, name = "n")
+
+# Create one sparse matrix for all emails
+model_matrix <- sparseMatrix(
+  i = match(model_words$email_id, emails_model$email_id),
+  j = match(model_words$word, train_vocab$word),
+  x = model_words$n,
+  dims = c(nrow(emails_model), nrow(train_vocab)),
+  dimnames = list(
+    as.character(emails_model$email_id),
+    train_vocab$word
+  )
+)
+
+# Split into training and testing matrices
+train_dtm <- model_matrix[as.character(train$email_id), ]
+test_dtm <- model_matrix[as.character(test$email_id), ]
+
+dim(train_dtm)
+dim(test_dtm)
+```
+
+## Naive Bayes Model
+
+I will start with a Naive Bayes model, a common method for spam detection. It uses word frequencies to estimate whether an email is more likely to be spam or ham. I will train the model using the training emails and their known labels.
+
+```{r}
+#| message: false
+library(quanteda)
+library(quanteda.textmodels)
+
+# Convert the training matrix to quanteda format
+train_dfm <- as.dfm(train_dtm)
+
+# Train the Naive Bayes model
+nb_model <- textmodel_nb(
+  train_dfm,
+  y = factor(train$label)
+)
+
+nb_model
+```
+
+After training the Naive Bayes model, I will use it to predict whether each email in the testing set is spam or ham. I will then compare these predictions with the actual labels to evaluate the model's performance.
+
+```{r}
+# Convert the testing matrix to quanteda format
+test_dfm <- as.dfm(test_dtm)
+
+# Predict email labels
+nb_predictions <- predict(nb_model, newdata = test_dfm)
+
+# Compare actual and predicted labels
+table(
+  Actual = test$label,
+  Predicted = nb_predictions
+)
+```
+
+The Naive Bayes model correctly classified 546 out of 559 testing emails, achieving an accuracy of approximately 97.67%. Only 4 legitimate emails were incorrectly identified as spam, while 9 spam emails were classified as ham. These results suggest that Naive Bayes performs well on this dataset, although some spam messages still go undetected.
+
+### Logistic Regression Model
+
+I will train a Logistic Regression model to classify emails as spam or ham. Unlike Naive Bayes, Logistic Regression estimates the probability of an email being spam based on a combination of word features. I will use the same training and testing data to make the comparison fair.
+
+```{r}
+#| message: false
+library(glmnet)
+
+# Convert labels to 0 (ham) and 1 (spam)
+train_y <- ifelse(train$label == "spam", 1, 0)
+
+# Train logistic regression
+set.seed(123)
+
+lr_model <- cv.glmnet(
+  train_dtm,
+  train_y,
+  family = "binomial",
+  alpha = 0,
+  nfolds = 5
+)
+
+lr_model
+
+```
+
+I will use the trained Logistic Regression model to predict whether each testing email is spam or ham. I will classify emails with a predicted spam probability of at least 50% as spam and compare the predictions with the actual labels.
+
+```{r}
+# Predict the probability of spam
+lr_prob <- predict(
+  lr_model,
+  newx = test_dtm,
+  s = "lambda.min",
+  type = "response"
+)
+
+# Convert probabilities into spam/ham labels
+lr_predictions <- ifelse(lr_prob >= 0.5, "spam", "ham")
+
+# Compare actual and predicted labels
+table(
+  Actual = test$label,
+  Predicted = lr_predictions
+)
+```
+
+The Logistic Regression model correctly classified 548 out of 559 testing emails, achieving an accuracy of 98.03%. It incorrectly classified only 2 legitimate emails as spam and missed 9 spam emails. Compared with Naive Bayes, Logistic Regression performed slightly better.
+
+### Compare model perfomance
+
+```{r}
+# Function to calculate performance metrics
+evaluate <- function(predicted) {
+  actual <- test$label
+  
+  tp <- sum(actual == "spam" & predicted == "spam")
+  fp <- sum(actual == "ham" & predicted == "spam")
+  fn <- sum(actual == "spam" & predicted == "ham")
+  
+  accuracy <- mean(actual == predicted)
+  precision <- tp / (tp + fp)
+  recall <- tp / (tp + fn)
+  f1 <- 2 * precision * recall / (precision + recall)
+  
+  round(c(accuracy, precision, recall, f1), 3)
+}
+comparison <- rbind(
+  "Naive Bayes" = evaluate(as.vector(nb_predictions)),
+  "Logistic Regression" = evaluate(as.vector(lr_predictions))
+)
+
+colnames(comparison) <- c("Accuracy", "Precision", "Recall", "F1")
+
+comparison
+```
+
+I will use a heatmap to compare the accuracy, precision, recall, and F1 scores of both models. The colors and values will make it easier to see how the models perform across different metrics and identify any differences between them.
+
+```{r}
+#| message: false
+library(tidyverse)
+comparison %>%
+  as.data.frame() %>%
+  rownames_to_column("Model") %>%
+  pivot_longer(
+    cols = -Model,
+    names_to = "Metric",
+    values_to = "Score"
+  ) %>%
+  ggplot(aes(x = Metric, y = Model, fill = Score)) +
+  geom_tile(color = "white", linewidth = 1) +
+  geom_text(aes(label = sprintf("%.3f", Score)), size = 4) +
+  scale_fill_gradient(
+    low = "white",
+    high = "forestgreen",
+    limits = c(0.95, 1)
+  ) +
+  labs(
+    title = "Model Performance Comparison",
+    x = NULL,
+    y = NULL
+  ) +
+  theme_minimal()
+```
+
+## Conclusion
+
+In this project, I compared Naive Bayes and Logistic Regression to see how accurately they could classify emails as spam or ham based on their text.
+
+Both models performed well, achieving approximately 98% accuracy. Logistic Regression performed slightly better, with 98.03% accuracy compared to 97.67% for Naive Bayes. Both models correctly identified 270 out of 279 spam emails, but Logistic Regression made one fewer false positive, incorrectly classifying only 2 legitimate emails as spam.
+
+Overall, the results show that both methods are effective for spam detection, with only a small difference in performance. One limitation was that some emails contained HTML formatting and encoded text that remained after cleaning. With more time, I would improve the text preprocessing, experiment with different classification thresholds, and test the models on other email datasets to see how well they perform on new data.
+
+## AI Use Disclosure
+
+I used ChatGPT throughout this project as a learning and coding assistant. It helped me understand more difficult concepts, particularly how Naive Bayes and Logistic Regression work, how they can be applied to text classification, and how to interpret performance metrics such as precision, recall, and F1 score. I also used ChatGPT to explore different approaches to text preprocessing and understand document-term matrices.
