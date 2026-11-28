@@ -1,0 +1,795 @@
+---
+title: "Alcohol Consumption and Household Income: Trends Across U.S. States"
+author: "Anastasiia Gmyrina"
+editor: visual
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-location: left
+    toc-depth: 3
+    code-fold: true
+    code-summary: "Show code"
+    code-tools: true
+    df-print: paged
+    smooth-scroll: true
+    embed-resources: true
+---
+
+# 1. Introduction
+
+For this project, I want to explore how alcohol consumption has changed across the United States and whether drinking patterns are related to household income. I'm particularly interested in how preferences for beer, wine, and spirits have shifted over time, which states consume the most alcohol per capita, and whether higher-income states have different drinking preferences.
+
+I will focus on the years 2015–2024 and combine alcohol consumption data with state-level household income estimates to explore trends and relationships.
+
+## Research Questions
+
+1.  How have beer, wine, and spirits consumption patterns changed from 2015 to 2024?
+
+2.  Which states have the highest and lowest alcohol consumption per capita?
+
+3.  Is there a relationship between household income and alcohol consumption across states?
+
+4.  Do higher-income states have different beverage preferences compared with lower-income states?
+
+# 2. Data Sources
+
+For this project, I will use two publicly available datasets from different sources.
+
+### 1. Alcohol Consumption Data - NIAAA
+
+The first dataset comes from the National Institute on Alcohol Abuse and Alcoholism (NIAAA), specifically *Surveillance Report #124: Apparent Per Capita Alcohol Consumption*.
+
+The dataset contains annual alcohol consumption estimates by U.S. state, including beer, wine, spirits, and total alcohol consumption. It also includes per-capita consumption estimates, which allow comparisons between states with different population sizes.
+
+The data are provided in a fixed-width text file. I will use R to import, clean, and transform the data, focusing on 2015–2024.
+
+**Source:** **NIAAA:** [Surveillance Report #124 and alcohol consumption data](https://beta.nih.gov/niaaa/research/surveillance-reports?utm_source=chatgpt.com)
+
+### 2. Median Household Income Data  - U.S. Census Data
+
+The second dataset will come from the U.S. Census Bureau's American Community Survey (ACS).
+
+I will use the Census API to retrieve annual median household income estimates for each state from 2015 to 2024. The API returns data in JSON format, which I will process using R.
+
+Median household income will allow me to compare alcohol consumption patterns across states with different income levels.
+
+**Source:** [U.S. Census Bureau, American Community Survey (ACS) 1-Year Estimates.](https://www.census.gov/data/developers/data-sets/acs-1year.html?utm_source=chatgpt.com)
+
+### Data Integration
+
+The two datasets will be combined using state and year. This will allow me to explore alcohol consumption trends, compare beverage categories, and investigate whether median household income is associated with differences in alcohol consumption across states.
+
+# 3. Data Collection and Preparation
+
+```{r}
+#| message: false
+library(tidyverse)
+library(httr2)
+library(lubridate)
+
+```
+
+## 3.1 Alcohol Consumption Data
+
+The NIAAA dataset is stored in a fixed-width text file, with documentation preceding the data. I used `readLines()` to load the file, removed the documentation by filtering for records beginning with a four-digit year, and imported the remaining data using `read_fwf()` and the specified column positions.
+
+```{r}
+library(tidyverse)
+
+# Define column positions
+colspecs <- fwf_positions(
+  start = c(1, 6, 9, 11, 22, 33, 43, 49, 52, 63, 69, 72, 74),
+  end = c(4, 7, 9, 20, 31, 41, 47, 50, 60, 67, 70, 72, 76),
+  col_names = c(
+    "year", "geography", "beverage", "gallons_beverage",
+    "gallons_ethanol", "population_14", "per_capita_14",
+    "decile_14", "population_21", "per_capita_21",
+    "decile_21", "data_source", "abv"
+  )
+)
+
+# Read the file and remove documentation
+lines <- readLines("alcohol.txt")
+data_lines <- lines[grepl("^(19|20)[0-9]{2} ", lines)]
+
+# Import the data
+alcohol_raw <- read_fwf(
+  I(data_lines),
+  col_positions = colspecs,
+  col_types = cols(.default = col_character())
+)
+
+glimpse(alcohol_raw)
+```
+
+After importing the data, I examined the variables to understand how they are organized. The dataset uses numeric codes for states and beverage categories, so I need to identify these codes before cleaning and analyzing the data.
+
+```{r}
+# Find the beverage code definitions
+beverage_pos <- grep("Type of beverage:", lines, fixed = TRUE)
+lines[beverage_pos[1]:(beverage_pos[1] + 6)]
+
+# Find the geographic code definitions
+geo_pos <- grep("Geographic ID code:", lines, fixed = TRUE)
+lines[geo_pos[1]:(geo_pos[1] + 15)]
+```
+
+The documentation shows that beverage codes 1–4 represent spirits, wine, beer, and all beverages. I used these definitions and the state FIPS codes to create readable categories. I also filtered the dataset to 2015–2024.
+
+```{r}
+# Convert codes and filter years
+alcohol_clean <- alcohol_raw %>%
+  mutate(
+    year = as.integer(year),
+    geography = as.integer(geography),
+    beverage = recode(
+      beverage,
+      "1" = "Spirits",
+      "2" = "Wine",
+      "3" = "Beer",
+      "4" = "All beverages"
+    )
+  ) %>%
+  filter(between(year, 2015, 2024))
+
+# Check geographic codes before mapping states
+sort(unique(alcohol_clean$geography))
+```
+
+Instead of manually entering state names, I extracted the geographic codes and names directly from the NIAAA documentation. I then used a join to match them with the alcohol consumption data.
+
+```{r}
+# Find the geographic code section in the documentation
+geo_pos <- grep("Geographic ID code:", lines, fixed = TRUE)[1]
+
+# Extract the geographic codes and names
+geo_lines <- lines[(geo_pos + 1):(geo_pos + 60)]
+
+state_lookup <- tibble(text = geo_lines) %>%
+  extract(
+    text,
+    into = c("geography", "state"),
+    regex = "^\\s*(\\d+)\\s+(.+?)\\s*$",
+    convert = TRUE
+  ) %>%
+  filter(!is.na(geography))
+
+# Join state names to alcohol data
+alcohol_clean <- alcohol_clean %>%
+  left_join(state_lookup, by = "geography")
+
+# Check results
+alcohol_clean %>%
+  select(year, state, beverage, per_capita_14) %>%
+  head(5)
+```
+
+The per-capita consumption values are stored as whole numbers with an implied decimal. I converted them to numeric values and divided by 10,000 to express consumption in gallons of pure alcohol per person.
+
+```{r}
+# Convert per-capita consumption to gallons
+alcohol_clean <- alcohol_clean %>%
+  mutate(
+    per_capita_14 = as.numeric(per_capita_14) / 10000,
+    per_capita_21 = as.numeric(per_capita_21) / 10000
+  )
+```
+
+Next, I checked for missing data and verified that the dataset contains the expected years, states, and beverage categories.
+
+```{r}
+# Check missing values
+alcohol_clean %>%
+  summarise(
+    missing_states = sum(is.na(state)),
+    missing_consumption = sum(is.na(per_capita_14))
+  )
+
+# Check years and beverage categories
+range(alcohol_clean$year)
+
+unique(alcohol_clean$beverage)
+
+# Check number of states
+n_distinct(alcohol_clean$state, na.rm = TRUE)
+```
+
+The initial quality check identified 44 records with missing state names, while all per-capita consumption values were present. I examined the unmatched geographic codes to determine whether they represented missing states or additional geographic categories.
+
+```{r}
+# Identify unmatched geographic codes
+alcohol_clean %>%
+  filter(is.na(state)) %>%
+  count(geography, sort = TRUE)
+```
+
+All 44 records with missing state names belonged to geographic code 99. I also identified four regional categories and Washington, D.C. Since my analysis focuses on the 50 U.S. states, I excluded these records and retained only the variables relevant to my analysis: year, state, beverage category, and per-capita alcohol consumption for the population aged 14 and older.
+
+```{r}
+# Keep only the 50 U.S. states
+alcohol_clean <- alcohol_clean %>%
+  filter(
+    !is.na(state),
+    !geography %in% c(11, 91, 92, 93, 94)
+  ) %>%
+  select(year, state, beverage, per_capita_14)
+
+# Final data quality check
+alcohol_clean %>%
+  summarise(
+    total_records = n(),
+    states = n_distinct(state),
+    years = n_distinct(year),
+    missing_values = sum(is.na(per_capita_14))
+  )
+
+```
+
+## 3.2 Household Income Data from the Census API
+
+```{r}
+#| message: false
+#| warning: false
+library(httr)
+library(jsonlite)
+library(dplyr)
+library(purrr)
+library(readr)
+
+```
+
+I will use the U.S. Census Bureau API to retrieve median household income data from the American Community Survey (ACS). The API allows me to retrieve data for multiple years programmatically, making the process easier to reproduce and update.The API key is stored separately for security. First, I will test the connection using 2023 data to make sure the API returns a successful response in JSON format.
+
+```{r}
+
+census_key <- Sys.getenv("CENSUS_API_KEY")
+
+if (nzchar(census_key)) {
+  response <- GET(
+    "https://api.census.gov/data/2023/acs/acs1",
+    query = list(
+      get = "NAME,B19013_001E",
+      `for` = "state:*",
+      key = census_key
+    )
+  )
+  
+  status_code(response)
+  headers(response)[["content-type"]]
+} else {
+  print("No API key provided. Using saved Census data.")
+}
+```
+
+I will retrieve annual median household income estimates for each state from 2015 to 2024, excluding 2020 because standard ACS 1-Year Estimates were not released that year. I created a function to request the data for each year, convert the JSON response into a data frame, and keep the state, year, and median household income.
+
+To ensure reproducibility, a local CSV copy of the retrieved Census data is included in the project repository. If a Census API key is available, the data can be retrieved directly from the API. Otherwise, the saved dataset is used, allowing the analysis to be reproduced without an API key.
+
+```{r}
+years <- c(2015:2019, 2021:2024)
+
+get_income <- function(year) {
+  
+  response <- GET(
+    paste0("https://api.census.gov/data/", year, "/acs/acs1"),
+    query = list(
+      get = "NAME,B19013_001E",
+      `for` = "state:*",
+      key = census_key
+    )
+  )
+  
+  stop_for_status(response)
+  
+  data <- fromJSON(
+    content(response, "text", encoding = "UTF-8")
+  )
+  
+  df <- as.data.frame(data[-1, ])
+  names(df) <- data[1, ]
+  
+  df %>%
+    mutate(
+      year = year,
+      median_income = as.numeric(B19013_001E)
+    ) %>%
+    select(state, NAME, year, median_income)
+}
+
+# Retrieve data from API or use saved data
+if (nzchar(census_key)) {
+  income_data <- map_dfr(years, get_income)
+} else {
+  income_data <- read_csv(
+    "income_data.csv",
+    col_types = cols(state = col_character())
+  )
+}
+
+```
+
+Next, I will preview first rows and check for missing values.
+
+```{r}
+# Keep only the 50 states
+income_data <- income_data %>%
+  filter(!state %in% c("11", "72")) %>%
+  arrange(year, NAME)
+
+# Preview the data
+head(income_data)
+
+# Check for missing values
+colSums(is.na(income_data))
+```
+
+## 3.3 Data Integration and Merging
+
+I will merge the alcohol consumption and household income datasets using state and year. Since income data for 2020 is unavailable, that year will be excluded.
+
+```{r}
+merged_data <- alcohol_clean %>%
+  left_join(
+    income_data,
+    by = c("state" = "NAME", "year" = "year")
+  )
+merged_data %>%
+  group_by(year) %>%
+  summarise(
+    records = n(),
+    missing_income = sum(is.na(median_income)),
+    .groups = "drop"
+  )
+```
+
+Since income data for 2020 is unavailable, I excluded that year from the final dataset.
+
+```{r}
+merged_data <- merged_data %>%
+  filter(year != 2020) %>%
+  select(year, state, beverage, per_capita_14, median_income)
+head(merged_data)
+```
+
+# 4. Data Analysis and Visualisations
+
+In this section, I will analyze alcohol consumption trends over time, compare consumption across states, and explore the relationship between median household income and beverage preferences.
+
+## 4.1 Alcohol Consumption Trends Over Time
+
+To examine changes in beverage consumption over time, I calculated the average per-capita consumption of beer, wine, and spirits across the 50 states for each year. I used the original cleaned alcohol dataset to include 2020, since household income data is not required for this analysis.
+
+```{r}
+beverage_trends <- alcohol_clean %>%
+  filter(beverage != "All beverages") %>%
+  group_by(year, beverage) %>%
+  summarise(
+    avg_consumption = mean(per_capita_14, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+```{r}
+ggplot(beverage_trends, 
+       aes(x = year, y = avg_consumption, color = beverage)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_color_manual(
+    values = c(
+      "Beer" = "#7895B2",
+      "Spirits" = "#344E6C",
+      "Wine" = "#A66A81"
+    )
+  ) +
+  scale_x_continuous(breaks = 2015:2024) +
+  labs(
+    title = "Alcohol Consumption Trends by Beverage Type",
+    subtitle = "Average across 50 U.S. states, 2015–2024",
+    x = "Year",
+    y = "Gallons of Pure Alcohol per Capita",
+    color = "Beverage"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+beverage_change <- beverage_trends %>%
+  filter(year %in% c(2015, 2024)) %>%
+  pivot_wider(
+    names_from = year,
+    values_from = avg_consumption
+  ) %>%
+  mutate(
+    pct_change = round((`2024` - `2015`) / `2015` * 100, 2)
+  )
+
+beverage_change
+```
+
+The results show a noticeable shift in beverage consumption between 2015 and 2024. Average spirits consumption increased by 23.07%, while beer and wine consumption decreased by 16.23% and 10.96%, respectively. Spirits consumption surpassed beer consumption in 2022 and remained relatively stable afterward. These findings suggest a shift in drinking patterns from beer toward spirits across the 50 U.S. states.
+
+## 4.2 Alcohol Consumption Across States
+
+To identify states with the highest and lowest alcohol consumption, I selected total per-capita alcohol consumption for 2024 and ranked the 50 states.
+
+```{r}
+state_consumption <- alcohol_clean %>%
+  filter(year == 2024, beverage == "All beverages") %>%
+  select(state, per_capita_14) %>%
+  arrange(desc(per_capita_14))
+
+head(state_consumption, 10)
+
+```
+
+```{r}
+state_comparison <- bind_rows(
+  state_consumption %>%
+    slice_max(per_capita_14, n = 10, with_ties = FALSE) %>%
+    mutate(group = "Highest consumption"),
+  
+  state_consumption %>%
+    slice_min(per_capita_14, n = 10, with_ties = FALSE) %>%
+    mutate(group = "Lowest consumption")
+) %>%
+  mutate(
+    sort_order = if_else(
+      group == "Highest consumption",
+      per_capita_14,
+      -per_capita_14
+    )
+  )
+
+ggplot(state_comparison,
+       aes(x = per_capita_14,
+           y = reorder(state, sort_order),
+           fill = group)) +
+  geom_col(width = 0.65) +
+  geom_text(
+    aes(label = sprintf("%.2f", per_capita_14)),
+    hjust = -0.2,
+    size = 3.5
+  ) +
+  facet_wrap(~group, scales = "free_y") +
+  scale_fill_manual(
+    values = c(
+      "Highest consumption" = "#24476B",
+      "Lowest consumption" = "#8BAFC9"
+    )
+  ) +
+  scale_x_continuous(
+    expand = expansion(mult = c(0, 0.15))
+  ) +
+  labs(
+    title = "Alcohol Consumption Across U.S. States",
+    subtitle = "Top and bottom 10 states, 2024",
+    x = "Gallons of Pure Alcohol per Capita",
+    y = NULL,
+    caption = "Source: NIAAA Alcohol Consumption Data"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "none",
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.spacing = grid::unit(1.5, "lines"),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 16),
+    plot.caption = element_text(color = "grey50")
+  )
+```
+
+In 2024, New Hampshire had the highest per-capita alcohol consumption at 4.19 gallons, followed by Delaware (3.85) and Nevada (3.40). Utah had the lowest consumption at 1.14 gallons. Alcohol consumption in New Hampshire was nearly four times higher than in Utah, highlighting substantial differences across states. However, these differences may also reflect tourism and cross-border alcohol purchases rather than residents' drinking habits alone.
+
+## 4.3 Relationship Between Household Income and Alcohol Consumption
+
+To examine the relationship between household income and alcohol consumption, I selected total per-capita consumption and median household income for each state in 2024. I will use Pearson correlation and simple linear regression to evaluate the strength and direction of this relationship.
+
+```{r}
+income_alcohol <- merged_data %>%
+  filter(
+    year == 2024,
+    beverage == "All beverages"
+  ) %>%
+  select(state, median_income, per_capita_14)
+
+head(income_alcohol)  
+```
+
+```{r}
+library(ggrepel)
+
+ggplot(income_alcohol,
+       aes(x = median_income, y = per_capita_14)) +
+  geom_smooth(
+    method = "lm",
+    formula = y ~ x,
+    color = "#D97757",
+    fill = "#D97757",
+    alpha = 0.12
+  ) +
+  geom_point(
+    color = "#24476B",
+    size = 3,
+    alpha = 0.75
+  ) +
+  geom_text_repel(
+    data = income_alcohol %>%
+      filter(state %in% c(
+        "New Hampshire", "Delaware", "Nevada",
+        "Utah", "New York", "California"
+      )),
+    aes(label = state),
+    size = 3.5,
+    seed = 42
+  ) +
+  scale_x_continuous(
+    labels = scales::label_dollar()
+  ) +
+  labs(
+    title = "Does Household Income Relate to Alcohol Consumption?",
+    subtitle = "Comparison across 50 U.S. states, 2024",
+    x = "Median Household Income",
+    y = "Gallons of Pure Alcohol per Capita "
+    ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    plot.caption = element_text(color = "grey50")
+  )
+```
+
+I used Pearson's correlation test to measure the strength and direction of the linear relationship between median household income and alcohol consumption.
+
+```{r}
+cor.test(
+  income_alcohol$median_income,
+  income_alcohol$per_capita_14,
+  method = "pearson"
+)
+```
+
+The Pearson correlation test revealed a weak positive relationship between median household income and alcohol consumption (r = 0.298, p = 0.035). This suggests that higher-income states tend to have slightly higher alcohol consumption per capita. However, the scatter plot shows considerable variation across states. For example, Utah has relatively high household income but the lowest alcohol consumption, while New Hampshire has the highest consumption. These findings suggest that factors other than income also play an important role in alcohol consumption patterns.
+
+```{r}
+income_model <- lm(
+  per_capita_14 ~ median_income,
+  data = income_alcohol
+)
+
+summary(income_model)
+```
+
+The linear regression results support the correlation findings. A \$10,000 increase in median household income is associated with approximately 0.14 additional gallons of pure alcohol consumption per capita. Although the relationship is statistically significant (p = 0.0355), household income explains only 8.9% of the variation in alcohol consumption across states. This suggests that income alone is not a strong predictor of alcohol consumption.
+
+## 4.4 Household Income and Beverage Preferences
+
+To examine whether beverage preferences differ by household income, I divided states into three income groups based on their 2024 median household income using the `ntile()` function.
+
+```{r}
+income_groups <- income_alcohol %>%
+  mutate(
+    income_group = ntile(median_income, 3),
+    income_group = factor(
+      income_group,
+      levels = c(1, 2, 3),
+      labels = c("Lower income",
+                 "Middle income",
+                 "Higher income")
+    )
+  )
+
+income_groups %>%
+  group_by(income_group) %>%
+  summarise(
+    states = n(),
+    min_income = min(median_income),
+    max_income = max(median_income),
+    .groups = "drop"
+  )
+```
+
+I calculated average per-capita consumption for each beverage category within the three income groups and converted these values into percentages to compare beverage consumption patterns.
+
+```{r}
+beverage_preferences <- merged_data %>%
+  filter(
+    year == 2024,
+    beverage != "All beverages"
+  ) %>%
+  left_join(
+    income_groups %>%
+      select(state, income_group),
+    by = "state"
+  ) %>%
+  group_by(income_group, beverage) %>%
+  summarise(
+    avg_consumption = mean(per_capita_14),
+    .groups = "drop"
+  ) %>%
+  group_by(income_group) %>%
+  mutate(
+    share = avg_consumption / sum(avg_consumption)
+  ) %>%
+  ungroup()
+
+
+```
+
+I used a stacked bar chart to visualize the share of beer, wine, and spirits consumption across the three income groups. This allows me to compare beverage preferences between lower-, middle-, and higher-income states.
+
+```{r}
+ggplot(beverage_preferences,
+       aes(x = share,
+           y = income_group,
+           fill = beverage)) +
+  geom_col(width = 0.6) +
+  geom_text(
+    aes(label = scales::percent(share, accuracy = 0.1)),
+    position = position_stack(vjust = 0.5),
+    color = "white",
+    size = 4
+  ) +
+  scale_fill_manual(
+    values = c(
+      "Beer" = "#7895B2",
+      "Spirits" = "#344E6C",
+      "Wine" = "#A66A81"
+    )
+  ) +
+  scale_x_continuous(
+    labels = scales::label_percent(),
+    expand = c(0, 0)
+  ) +
+  labs(
+    title = "Beverage Preferences by Household Income",
+    subtitle = "Comparison across state income groups, 2024",
+    x = "Share of Alcohol Consumption",
+    y = NULL,
+    fill = NULL,
+    caption = "Sources: NIAAA and U.S. Census Bureau"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    legend.position = "top",
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold", size = 16),
+    plot.caption = element_text(color = "grey50")
+  )
+```
+
+The results reveal noticeable differences in beverage consumption patterns across income groups. Beer accounts for the largest share of alcohol consumption in lower-income states (45.2%), while spirits dominate in higher-income states (47.9%). Wine also represents a larger share in higher-income states (18.2%) compared with lower-income states (12.6%). These findings suggest that household income is associated not only with overall alcohol consumption but also with the types of beverages consumed.
+
+## 4.5 Interactive Map of Alcohol Consumption Across U.S. States
+
+As an additional feature, I created an interactive choropleth map using Plotly to explore geographic differences in alcohol consumption from 2015 to 2024. The map includes a year slider, animation controls, and hover information. To ensure meaningful comparisons over time, I fixed the color scale using the minimum and maximum consumption values across the entire study period. This ensures that the same color represents the same consumption level regardless of the selected year.
+
+```{r}
+#| message: false
+#| warning: false
+library(plotly)
+
+# Prepare data for all years
+map_data <- alcohol_clean %>%
+  filter(beverage == "All beverages") %>%
+  mutate(
+    abbr = state.abb[match(state, state.name)]
+  ) %>%
+  arrange(year, state)
+
+# Create interactive animated map
+plot_ly(
+  data = map_data,
+  type = "choropleth",
+  locationmode = "USA-states",
+  locations = ~abbr,
+  z = ~per_capita_14,
+  text = ~state,
+  frame = ~year,
+  
+  hovertemplate = paste0(
+    "<b>%{text}</b><br>",
+    "Consumption: %{z:.2f} gallons per capita",
+    "<extra></extra>"
+  ),
+  
+  colorscale = list(
+    list(0, "#E3EDF5"),
+    list(0.5, "#8BAFC9"),
+    list(1, "#24476B")
+  ),
+  
+  # Keep the color scale consistent across years
+  zmin = min(map_data$per_capita_14, na.rm = TRUE),
+  zmax = max(map_data$per_capita_14, na.rm = TRUE),
+  zauto = FALSE,
+  
+  marker = list(
+    line = list(color = "white", width = 1)
+  ),
+  
+  colorbar = list(
+    title = "Gallons<br>per capita",
+    thickness = 15
+  )
+) %>%
+  layout(
+    title = list(
+      text = paste0(
+        "<b>Alcohol Consumption Across the United States</b>",
+        "<br><sup>Gallons of pure alcohol per capita (Age 14+), 2015–2024</sup>"
+      ),
+      x = 0.02
+    ),
+    geo = list(
+      scope = "usa",
+      projection = list(type = "albers usa"),
+      bgcolor = "white"
+    ),
+    dragmode = "pan",
+    paper_bgcolor = "white",
+    margin = list(l = 10, r = 10, t = 80, b = 100)
+  ) %>%
+  animation_opts(
+    frame = 1000,
+    transition = 0,
+    redraw = TRUE
+  ) %>%
+  animation_slider(
+    currentvalue = list(prefix = "Year: ")
+  ) %>%
+  animation_button(
+    x = 0,
+    xanchor = "left"
+  ) %>%
+  config(
+    scrollZoom = TRUE,
+    displayModeBar = TRUE,
+    displaylogo = FALSE
+  )
+```
+
+# 5. Conclusions and Limitations
+
+This project explored changes in alcohol consumption across the United States from 2015 to 2024 and examined the relationship between household income and drinking patterns.
+
+The analysis revealed several important findings:
+
+- **Changes in consumption patterns:** Average per-capita spirits consumption across the 50 states increased by 23.07%, while beer and wine consumption decreased by 16.23% and 10.96%, respectively. This indicates a shift in consumption patterns from beer toward spirits over the study period.
+
+- **Geographic differences:** Alcohol consumption varied considerably across states. In 2024, New Hampshire had the highest per-capita consumption, while Utah had the lowest.
+
+- **Relationship with household income:** Pearson correlation revealed a weak but statistically significant positive relationship between household income and alcohol consumption (r = 0.298, p = 0.035). However, the regression analysis showed that income explained only 8.9% of the variation in consumption.
+
+- **Beverage preferences:** Lower-income states had a larger share of beer consumption, while higher-income states had larger shares of spirits and wine consumption.
+
+Overall, the findings suggest that household income is associated with both the amount and type of alcohol consumed. However, income alone is not a strong predictor of alcohol consumption.
+
+### Limitations
+
+This analysis has several limitations. First, the NIAAA data is based on alcohol sales, which may be influenced by tourism and cross-border purchases. Second, state-level data does not capture individual drinking behavior or income differences within states. Third, household income data for 2020 was unavailable and excluded from the merged dataset. Finally, other factors, such as demographics, cultural differences, alcohol prices, and state regulations, were not included in the analysis.
+
+Future research could incorporate these additional variables to better understand the factors influencing alcohol consumption patterns across the United States.
+
+Additionally, averages across states are not weighted by population, meaning that smaller and larger states contribute equally to the analysis. The observed state-level associations also do not necessarily reflect individual drinking behavior.
+
+# 6. References
+
+- National Institute on Alcohol Abuse and Alcoholism (NIAAA). [Alcohol Epidemiologic Data System (AEDS)](https://www.niaaa.nih.gov/research/niaaa-funded-research/alcohol-epidemiologic-data-system-aeds?utm_source=chatgpt.com).
+
+- U.S. Census Bureau. [American Community Survey (ACS) Data API](https://www.census.gov/data/developers/data-sets/acs-1year.html?utm_source=chatgpt.com).
+
+- Plotly. [Choropleth Maps in R](https://plotly.com/r/choropleth-maps/?utm_source=chatgpt.com).
+
+- Wickham, H., et al. [Tidyverse Documentation](https://www.tidyverse.org/?utm_source=chatgpt.com).
+
+- [The R Graph Gallery](https://r-graph-gallery.com/?utm_source=chatgpt.com)
+
+# 7. AI disclosure
+
+ChatGPT was used as a supporting tool throughout this project to assist with R code debugging, data transformation, visualization design, statistical interpretation, and report organization.
+
+I reviewed the generated suggestions, tested the code, and made adjustments to ensure that the analysis aligned with my research questions. The final selection of data sources, analytical methods, visualizations, and conclusions was guided by my own decisions.
